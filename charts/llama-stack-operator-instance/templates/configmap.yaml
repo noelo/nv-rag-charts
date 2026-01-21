@@ -98,8 +98,21 @@ data:
       inference:
       - provider_id: nvidia0
         provider_type: "remote::nvidia"
+        provider_model_id: 
         config:
           api_key: ${env.MODEL_API_TOKEN_0}
+          allowed_models: 
+            - ${env.MODEL_NAME_0}
+      - provider_id: vllm_embed_1
+        provider_type: "remote::vllm"
+        config:
+          url: "${env.MODEL_URL_1}"
+          tls_verify: false
+      - provider_id: vllm_embed_2
+        provider_type: "remote::vllm"
+        config:
+          url: "${env.MODEL_URL_2}"
+          tls_verify: false
       {{- if .Values.rag.enabled }}
       - provider_id: sentence-transformers
         provider_type: inline::sentence-transformers
@@ -184,13 +197,23 @@ data:
       - metadata: {}
         model_id: ${env.MODEL_NAME_0}
         provider_id: nvidia0
-        provider_model_id: ${env.MODEL_NAME_0}
+        model_type: llm
+      - metadata:
+          embedding_dimension: 2048
+        model_id: ${env.MODEL_NAME_1}
+        provider_id: vllm_embed_1
+        provider_model_id: ${env.MODEL_NAME_1}
+        model_type: embedding
+      - metadata: {}
+        model_id: ${env.MODEL_NAME_2}
+        provider_id: vllm_embed_2
+        provider_model_id: ${env.MODEL_NAME_2}
         model_type: llm
       {{- if .Values.rag.enabled }}
       - metadata:
           embedding_dimension: 384
         model_id: all-MiniLM-L6-v2
-        provider_id: sentence-transformers
+        provider_id: vllm_embed_1
         model_type: embedding
       {{- end }}
     tool_groups:

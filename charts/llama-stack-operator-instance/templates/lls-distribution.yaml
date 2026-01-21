@@ -25,6 +25,18 @@ spec:
           value: {{ .Values.MODEL_URL_0 | quote }}
         - name: MODEL_API_TOKEN_0
           value: {{ .Values.MODEL_API_TOKEN_0 | quote }}
+        - name: MODEL_NAME_1
+          value: {{ .Values.MODEL_NAME_1 | quote }}
+        - name: MODEL_URL_1
+          value: {{ .Values.MODEL_URL_1 | quote }}
+        - name: MODEL_API_TOKEN_1
+          value: {{ .Values.MODEL_API_TOKEN_1 | quote }}
+        - name: MODEL_NAME_2
+          value: {{ .Values.MODEL_NAME_2 | quote }}
+        - name: MODEL_URL_2
+          value: {{ .Values.MODEL_URL_2 | quote }}
+        - name: MODEL_API_TOKEN_2
+          value: {{ .Values.MODEL_API_TOKEN_2 | quote }}
       name: llama-stack
       port: 8321
     distribution:

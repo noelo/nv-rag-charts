@@ -1,0 +1,6 @@
+dependencies:
+- name: nv-ingest
+  repository: https://helm.ngc.nvidia.com/nvidia/nemo-microservices
+  version: 25.9.0
+digest: sha256:1cce461f7770b2af04a537b252c929cec1a4e927ca65c6f514a95bb958d88125
+generated: "2026-01-21T17:17:55.580160707Z"

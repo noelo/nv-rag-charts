@@ -41,5 +41,15 @@ llama-stack-client inference chat-completion --message "hello, what model are yo
   APP_RANKING_MODELNAME: "nvidia/llama-3.2-nv-rerankqa-1b-v2"
 
   ##===VLM Model specific configurations===
-    APP_VLM_SERVERURL: "http://nim-vlm:8000/v1"
+  APP_VLM_SERVERURL: "http://nim-vlm:8000/v1"
   APP_VLM_MODELNAME: "nvidia/llama-3.1-nemotron-nano-vl-8b-v1"
+
+
+
+  helm repo nvidia add https://helm.ngc.nvidia.com/nim/nvidia --username='$oauthtoken' --password=nvapi-
+helm repo add bitnami https://charts.bitnami.com/bitnami
+helm repo add zipkin https://zipkin.io/zipkin-helm
+helm repo add opentelemetry https://open-telemetry.github.io/opentelemetry-helm-charts
+helm repo add prometheus https://prometheus-community.github.io/helm-charts
+helm repo add nmp https://helm.ngc.nvidia.com/nvidia/nemo-microservices --username='$oauthtoken' --password=nvapi-
+
