@@ -1,0 +1,46 @@
+# Llama Stack Operator Instance configuration
+MODEL_NAME_0: "nvidia/llama-3.3-nemotron-super-49b-v1.5"
+MODEL_URL_0: "https://integrate.api.nvidia.com/v1"
+MODEL_API_TOKEN_0: ""
+
+
+
+
+# Distribution configuration
+distribution:
+  image: "quay.io/rhoai-genaiops/llama-stack-vllm-milvus-fms:rhoai-3.0-fix2"
+
+
+# ConfigMap for Llama Stack configuration
+configMap:
+  enabled: true
+
+# Telemetry configuration
+telemetry:
+  enabled: false
+
+rag:
+  enabled: false
+  milvus:
+    service: "milvus-test"
+
+mcp:
+  enabled: false
+
+otelCollector:
+  enabled: false
+
+eval:
+  enabled: false
+
+guardrails:
+  enabled: false
+  regex:
+    enabled: false
+    filter: ["(?i).*fight club.*"]
+  hap:
+    enabled: false
+  prompt_injection:
+    enabled: false
+  language_detection:
+    enabled: false

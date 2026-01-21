@@ -1,0 +1,265 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "title": "Llama Stack Operator Instance Helm Chart Values Schema",
+  "description": "Schema for validating values.yaml configuration for the Llama Stack Operator Instance Helm chart",
+  "properties": {
+    "MODEL_NAME": {
+      "type": "string",
+      "description": "Name of the model to use for inference",
+      "minLength": 1,
+      "default": "llama32",
+      "examples": [
+        "llama32",
+        "llama3.2",
+        "llama3.1"
+      ]
+    },
+    "MODEL_URL": {
+      "type": "string",
+      "description": "URL endpoint for the model inference service",
+      "pattern": "^https?://[^\\s]+$",
+      "default": "http://llama-32-predictor.ai501.svc.cluster.local:8080/v1",
+      "examples": [
+        "http://llama-32-predictor.ai501.svc.cluster.local:8080/v1",
+        "http://model-service:8080/v1"
+      ]
+    },
+    "MODEL_MAX_TOKENS": {
+      "type": "integer",
+      "description": "Max tokens supported by the model",
+      "default": "2048",
+      "examples": [
+        "llama32",
+        "llama3.2",
+        "llama3.1"
+      ]
+    },
+    "MODEL_API_TOKEN": {
+      "type": "string",
+      "description": "Model API key",
+      "default": "",
+      "examples": [
+        "dfjgldkfjproijtgr",
+        "key-ksjhfkjdf"
+      ]
+    },
+    "distribution": {
+      "type": "object",
+      "description": "Distribution configuration for Llama Stack",
+      "properties": {
+        "image": {
+          "type": "string",
+          "description": "Container image for the Llama Stack distribution",
+          "minLength": 1,
+          "default": "quay.io/rhoai-genaiops/llama-stack-vllm-milvus:0.2.11",
+          "examples": [
+            "quay.io/rhoai-genaiops/llama-stack-vllm-milvus:0.2.11",
+            "registry.example.com/llama-stack:latest"
+          ]
+        }
+      },
+      "required": ["image"],
+      "additionalProperties": false
+    },
+    "configMap": {
+      "type": "object",
+      "description": "ConfigMap configuration settings",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable or disable ConfigMap creation",
+          "default": true
+        }
+      },
+      "required": ["enabled"],
+      "additionalProperties": false
+    },
+    "telemetry": {
+      "type": "object",
+      "description": "Telemetry configuration",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable or disable telemetry collection",
+          "default": false
+        }
+      },
+      "required": ["enabled"],
+      "additionalProperties": false
+    },
+    "rag": {
+      "type": "object",
+      "description": "RAG (Retrieval-Augmented Generation) configuration",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable or disable RAG functionality",
+          "default": false
+        },
+        "milvus": {
+          "type": "object",
+          "description": "Milvus vector database configuration",
+          "properties": {
+            "service": {
+              "type": "string",
+              "description": "Milvus service name",
+              "minLength": 1,
+              "default": "milvus-test",
+              "examples": [
+                "milvus-test",
+                "milvus-prod"
+              ]
+            }
+          },
+          "required": ["service"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["enabled"],
+      "additionalProperties": false
+    },
+    "mcp": {
+      "type": "object",
+      "description": "Model Context Protocol configuration",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable or disable MCP functionality",
+          "default": false
+        }
+      },
+      "required": ["enabled"],
+      "additionalProperties": false
+    },
+    "otelCollector": {
+      "type": "object",
+      "description": "OpenTelemetry Collector configuration",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable or disable OpenTelemetry Collector integration",
+          "default": false
+        }
+      },
+      "required": ["enabled"],
+      "additionalProperties": false
+    },
+    "eval": {
+      "type": "object",
+      "description": "Evaluation functionality configuration",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable or disable evaluation capabilities",
+          "default": true
+        }
+      },
+      "required": ["enabled"],
+      "additionalProperties": false
+    },
+    "guardrails": {
+      "type": "object",
+      "description": "Guardrails configuration for content safety and filtering",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable or disable guardrails functionality",
+          "default": false
+        },
+        "regex": {
+          "type": "object",
+          "description": "Regex-based content filtering configuration",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Enable or disable regex-based filtering",
+              "default": false
+            },
+            "filter": {
+              "type": "array",
+              "description": "Array of regex patterns to filter content. Multiple filters can be specified in comma-separated format.",
+              "items": {
+                "type": "string",
+                "pattern": ".*"
+              },
+              "minItems": 1,
+              "default": ["(?i).*fight club.*"],
+              "examples": [
+                ["(?i).*fight club.*"],
+                ["(?i).*fight club.*", "(?i).*example.*"],
+                ["(?i).*prohibited.*", "(?i).*banned.*", "(?i).*restricted.*"]
+              ]
+            }
+          },
+          "required": ["enabled"],
+          "additionalProperties": false
+        },
+        "hap": {
+          "type": "object",
+          "description": "HAP (Hate, Abuse, Profanity) detection configuration",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Enable or disable HAP detection",
+              "default": false
+            }
+          },
+          "required": ["enabled"],
+          "additionalProperties": false
+        },
+        "prompt_injection": {
+          "type": "object",
+          "description": "Prompt injection detection configuration",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Enable or disable prompt injection detection",
+              "default": false
+            }
+          },
+          "required": ["enabled"],
+          "additionalProperties": false
+        },
+        "language_detection": {
+          "type": "object",
+          "description": "Language detection configuration",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Enable or disable language detection",
+              "default": false
+            }
+          },
+          "required": ["enabled"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["enabled"],
+      "additionalProperties": false
+    },
+    "chart_path": {
+      "type": "string",
+      "description": "Target namespace for deployment (format: userX-environment)",
+      "examples": []
+    },
+    "target_revision": {
+      "type": "string",
+      "description": "Target revision for deployment",
+      "examples": []
+    }
+  },
+  "required": [
+    "MODEL_NAME",
+    "MODEL_URL",
+    "distribution",
+    "configMap",
+    "telemetry",
+    "rag",
+    "mcp",
+    "otelCollector",
+    "eval",
+    "guardrails"
+  ],
+  "additionalProperties": false
+}

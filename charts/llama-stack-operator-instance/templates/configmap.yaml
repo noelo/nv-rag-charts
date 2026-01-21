@@ -1,0 +1,242 @@
+{{- if .Values.configMap.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: llama-stack-config
+  labels:
+    {{- include "llama-stack-operator-instance.labels" . | nindent 4 }}
+data:
+  run.yaml: |-
+    version: '2'
+    image_name: vllm
+    apis:
+    {{- if and .Values.eval.enabled }}
+    - agents
+    {{- end }}
+    - datasetio
+    - eval
+    - inference
+    - safety
+    {{- if .Values.guardrails.enabled }}
+    - shields
+    {{- end }}
+    - scoring
+    - tool_runtime
+    {{- if and .Values.rag.enabled }}
+    - vector_io
+    {{- end }}
+    - files
+    {{- if .Values.telemetry.enabled }}
+    - telemetry
+    {{- end }}
+    providers:
+      {{- if .Values.guardrails.enabled }}
+      safety:
+        - provider_id: trusty_fms
+          provider_type: remote::trusty_fms
+          config:
+            orchestrator_url: http://guardrails-orchestrator:8080
+      {{- end }}
+          {{- if .Values.guardrails.regex.enabled }}
+            shields:
+              regex:
+                detectors:
+                  regex_competitor:
+                    detector_params:
+                      regex: [{{- range $i, $f := .Values.guardrails.regex.filter }}{{ if $i }}, {{ end }}{{ $f | quote }}{{- end }}]
+                type: content
+                confidence_threshold: 0.5
+                message_types: ["user", "system", "completion"]
+      {{- end }}
+      {{- if .Values.guardrails.hap.enabled }}
+              hap:
+                type: content
+                confidence_threshold: 0.5
+                message_types: ["user", "system", "completion"]
+                detectors:
+                  hap:
+                    detector_params: {} 
+      {{- end }}
+      {{- if .Values.guardrails.language_detection.enabled }}
+              language_detection:
+                type: content
+                confidence_threshold: 0.5
+                message_types: ["user", "system", "completion"]
+                detectors:
+                  language_detection:
+                    detector_params: {}
+      {{- end }}
+      {{- if .Values.guardrails.prompt_injection.enabled }}
+              prompt_injection:
+                type: content
+                confidence_threshold: 0.5
+                message_types: ["user", "system", "completion"]
+                detectors:
+                  prompt_injection:
+                    detector_params: {}
+      {{- end }}
+      scoring:
+      - provider_id: basic
+        provider_type: inline::basic
+        config: {}
+      - provider_id: llm-as-judge
+        provider_type: inline::llm-as-judge
+        config: {}
+      {{- if and .Values.eval.enabled }}
+      agents:
+      - provider_id: meta-reference
+        provider_type: inline::meta-reference
+        config:
+          persistence_store:
+            type: sqlite
+            db_path: ${env.SQLITE_STORE_DIR:=~/.llama/distributions/starter}/agents_store.db
+          responses_store:
+            type: sqlite
+            db_path: ${env.SQLITE_STORE_DIR:=~/.llama/distributions/starter}/responses_store.db
+      {{- end }}
+      inference:
+      - provider_id: nvidia0
+        provider_type: "remote::nvidia"
+        config:
+          api_key: ${env.MODEL_API_TOKEN_0}
+      {{- if .Values.rag.enabled }}
+      - provider_id: sentence-transformers
+        provider_type: inline::sentence-transformers
+        config: {}
+      {{- end }}
+      {{- if .Values.eval.enabled }}
+      datasetio:
+      - provider_id: huggingface
+        provider_type: remote::huggingface
+        config:
+          kvstore:
+            type: sqlite
+            namespace: null
+            db_path: ${env.SQLITE_STORE_DIR:=~/.llama/distributions/sample-notebook}/huggingface_datasetio.db
+      eval:
+      - provider_id: meta-reference
+        provider_type: inline::meta-reference
+        config:
+          kvstore:
+            type: sqlite
+            namespace: null
+            db_path: ${env.SQLITE_STORE_DIR:=~/.llama/distributions/starter}/eval_store.db
+      {{- end }}
+      files:
+      - provider_id: local-files
+        provider_type: inline::localfs
+        config:
+          storage_dir: /opt/app-root/src/data/files
+          create_if_missing: true
+          metadata_store:
+            type: sqlite
+            db_path: /opt/app-root/src/.llama/distributions/files_metadata.db
+      tool_runtime:
+      - provider_id: model-context-protocol
+        provider_type: remote::model-context-protocol
+        config: {}
+      - provider_id: brave-search
+        provider_type: remote::brave-search
+        config:
+          api_key: brave-search-api-key
+      - provider_id: tavily-search
+        provider_type: remote::tavily-search
+        config: {}
+      {{- if .Values.rag.enabled }}
+      - provider_id: rag-runtime
+        provider_type: inline::rag-runtime
+        config:
+          files_provider: local-files 
+          vectorio_provider: milvus
+          embeddings_provider: sentence-transformers
+      {{- end }}
+      vector_io:
+      - provider_id: milvus
+        provider_type: inline::milvus
+        config:
+          db_path: ${env.MILVUS_DB_PATH:=~/.llama/distributions}/milvus.db
+          kvstore:
+            type: sqlite
+            db_path: ${env.SQLITE_STORE_DIR:=~/.llama/distributions}/milvus_registry.db
+      {{- if and .Values.eval.enabled (or (contains "test" .Release.Namespace) (contains "prod" .Release.Namespace)) }}
+      vector_io:
+      - provider_id: milvus
+        provider_type: remote::milvus
+        config:
+          uri: "http://{{ .Values.rag.milvus.service }}.{{ .Release.Namespace }}.svc.cluster.local:19530"
+          token: "root:Milvus"
+          kvstore:
+            type: sqlite
+            db_path: ${env.SQLITE_STORE_DIR:=~/.llama/distributions}/milvus_registry.db
+      {{- end }}
+      {{- if .Values.telemetry.enabled }}
+      telemetry:
+      - provider_id: meta-reference
+        provider_type: inline::meta-reference
+        config:
+          service_name: ${env.OTEL_SERVICE_NAME:llama-stack}
+          sinks: ${env.TELEMETRY_SINKS:console, sqlite, otel_metric}
+          otel_trace_endpoint: ${env.OTEL_TRACE_ENDPOINT:}
+          sqlite_db_path: ${env.SQLITE_DB_PATH:=~/.llama/distributions/remote-vllm/trace_store.db}
+      {{- end }}
+    models:
+      - metadata: {}
+        model_id: ${env.MODEL_NAME_0}
+        provider_id: nvidia0
+        provider_model_id: ${env.MODEL_NAME_0}
+        model_type: llm
+      {{- if .Values.rag.enabled }}
+      - metadata:
+          embedding_dimension: 384
+        model_id: all-MiniLM-L6-v2
+        provider_id: sentence-transformers
+        model_type: embedding
+      {{- end }}
+    tool_groups:
+    - provider_id: tavily-search
+      toolgroup_id: builtin::websearch
+    {{- if .Values.rag.enabled }}
+    - toolgroup_id: insert_into_memory
+      provider_id: rag-runtime
+    {{- end }}
+    {{- if .Values.mcp.enabled }}
+    # - toolgroup_id: mcp::openshift
+    #   provider_id: model-context-protocol
+    #   mcp_endpoint:
+    #     uri: http://ocp-mcp-server.agent-demo.svc.cluster.local:8000/sse
+    # - toolgroup_id: mcp::github
+    #   provider_id: model-context-protocol
+    #   mcp_endpoint:
+    #     uri: http://github-mcp-server.agent-demo.svc.cluster.local:80/sse
+    - toolgroup_id: mcp::skills
+      provider_id: model-context-protocol
+      mcp_endpoint:
+        uri: http://claude-skills-mcp-backend.skills.svc.cluster.local:8765/mcp
+    {{- end }}
+    {{- if .Values.eval.enabled }}
+    benchmarks: []
+    {{- end }}
+    server:
+      port: 8321
+    {{- if .Values.guardrails.enabled }}
+    external_providers_dir: /.llama/providers.d/
+    shields:
+    {{- end }}
+    {{- if .Values.guardrails.regex.enabled }}
+    - shield_id: regex
+      provider_id: trusty_fms
+    {{- end }}
+    {{- if .Values.guardrails.hap.enabled }}
+    - shield_id: hap
+      provider_id: trusty_fms
+    {{- end }}
+    {{- if .Values.guardrails.prompt_injection.enabled }}
+    - shield_id: prompt_injection
+      provider_id: trusty_fms
+    {{- end }}
+    {{- if .Values.guardrails.language_detection.enabled }}
+    - shield_id: language_detection
+      provider_id: trusty_fms
+    {{- end }}
+{{- end }}
