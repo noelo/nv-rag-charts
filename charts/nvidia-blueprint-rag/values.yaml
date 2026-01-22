@@ -119,9 +119,11 @@ envVars:
   APP_RETRIEVER_TOPK: "10"
 
   ##===LLM Model specific configurations===
+  # APP_LLM_MODELNAME: "nvidia/llama-3.3-nemotron-super-49b-v1.5"
+
   APP_LLM_MODELNAME: "nvidia/llama-3.3-nemotron-super-49b-v1.5"
   # URL on which LLM model is hosted. If "", Nvidia hosted API is used
-  APP_LLM_SERVERURL: "http://llama-stack-service:8321/v1/openai/v1"
+  # APP_LLM_SERVERURL: "http://llama-stack-service:8321/v1/openai"
   # LLM model parameters
   LLM_MAX_TOKENS: "32768"
   LLM_TEMPERATURE: "0"
@@ -130,23 +132,23 @@ envVars:
   ##===Query Rewriter Model specific configurations===
   APP_QUERYREWRITER_MODELNAME: "nvidia/llama-3.3-nemotron-super-49b-v1.5"
   # URL on which query rewriter model is hosted. If "", Nvidia hosted API is used
-  APP_QUERYREWRITER_SERVERURL: "http://llama-stack-service:8321/v1/openai/v1"
+  # APP_QUERYREWRITER_SERVERURL: "http://llama-stack-service:8321/v1/openai"
 
   ##===Filter Expression Generator Model specific configurations===
   APP_FILTEREXPRESSIONGENERATOR_MODELNAME: "nvidia/llama-3.3-nemotron-super-49b-v1.5"
   # URL on which filter expression generator model is hosted. If "", Nvidia hosted API is used
-  APP_FILTEREXPRESSIONGENERATOR_SERVERURL: "http://llama-stack-service:8321/v1/openai/v1"
+  # APP_FILTEREXPRESSIONGENERATOR_SERVERURL: "http://llama-stack-service:8321/v1/openai"
   # enable filter expression generator for natural language to filter expression conversion
   ENABLE_FILTER_GENERATOR: "False"
 
   ##===Embedding Model specific configurations===
   # URL on which embedding model is hosted. If "", Nvidia hosted API is used
-  APP_EMBEDDINGS_SERVERURL: "http://llama-stack-service:8321/v1/openai/v1"
+  APP_EMBEDDINGS_SERVERURL: "http://embedded-qa-predictor.nimtest.svc.cluster.local:8000/v1/"
   APP_EMBEDDINGS_MODELNAME: "nvidia/llama-3.2-nv-embedqa-1b-v2"
 
   ##===Reranking Model specific configurations===
   # URL on which ranking model is hosted. If "", Nvidia hosted API is used
-  APP_RANKING_SERVERURL: "http://llama-stack-service:8321/v1/openai/v1"
+  APP_RANKING_SERVERURL: "http://rerank-predictor.nimtest.svc.cluster.local:8000"
   APP_RANKING_MODELNAME: "nvidia/llama-3.2-nv-rerankqa-1b-v2"
   ENABLE_RERANKER: "True"
   # Default confidence threshold for filtering documents by reranker relevance scores (0.0 to 1.0)
@@ -206,7 +208,7 @@ envVars:
   # reflection llm
   REFLECTION_LLM: "nvidia/llama-3.3-nemotron-super-49b-v1.5"
   # reflection llm server url. If "", Nvidia hosted API is used
-  REFLECTION_LLM_SERVERURL: "http://llama-stack-service:8321/v1/openai/v1"
+  # REFLECTION_LLM_SERVERURL: "http://llama-stack-service:8321/v1/openai"
 
   # Choose whether to enable source metadata in document content during generation
   ENABLE_SOURCE_METADATA: "False"
@@ -295,12 +297,12 @@ ingestor-server:
     LLM_API_KEY: ""
 
     # === Embeddings Configurations ===
-    APP_EMBEDDINGS_SERVERURL: "http://llama-stack-service:8321/v1/openai/v1"
+    APP_EMBEDDINGS_SERVERURL: "http://embedded-qa-predictor.nimtest.svc.cluster.local:8000/v1/"
     APP_EMBEDDINGS_MODELNAME: "nvidia/llama-3.2-nv-embedqa-1b-v2"
     APP_EMBEDDINGS_DIMENSIONS: "2048"
 
     # === NV-Ingest Configurations ===
-    APP_NVINGEST_MESSAGECLIENTHOSTNAME: "rag-nv-ingest"
+    APP_NVINGEST_MESSAGECLIENTHOSTNAME: "nim-rag-nv-ingest"
     APP_NVINGEST_MESSAGECLIENTPORT: "7670"
 
     # === NV-Ingest extraction configurations ===
@@ -326,7 +328,7 @@ ingestor-server:
     # === General ===
     # Summary Model Configurations
     SUMMARY_LLM: "nvidia/llama-3.3-nemotron-super-49b-v1.5"
-    SUMMARY_LLM_SERVERURL: "http://llama-stack-service:8321/v1/openai/v1"
+    # SUMMARY_LLM_SERVERURL: "http://llama-stack-service:8321/v1/openai"
     SUMMARY_LLM_MAX_CHUNK_LENGTH: "50000"
     SUMMARY_CHUNK_OVERLAP: "200"
 
@@ -342,7 +344,7 @@ ingestor-server:
     APP_NVINGEST_TEMP_DIR: "/tmp/"
 
     # === Redis configurations ===
-    REDIS_HOST: "rag-redis-master"
+    REDIS_HOST: "nim-rag-redis-master"
     REDIS_PORT: "6379"
     REDIS_DB: "0"
 
@@ -405,9 +407,9 @@ frontend:
     # Runtime environment variables for Vite frontend
     # Note: Model names are now managed by frontend settings store
     - name: VITE_API_CHAT_URL
-      value: "http://rag-server:8081/v1"
+      value: "http://rag-server:8081"
     - name: VITE_API_VDB_URL
-      value: "http://ingestor-server:8082/v1"
+      value: "http://ingestor-server:8082"
     - name: VITE_MILVUS_URL
       value: "http://nim-milvus:19530"
 
@@ -674,7 +676,15 @@ nv-ingest:
     tag: "25.9.0"
   resources:
     limits:
-      nvidia.com/gpu: 0
+      memory: 16Gi
+      cpu: "6"
+    requests:
+      memory: 10Gi
+      cpu: "4"
+
+  podSecurityContext:
+    fsGroup: 1000
+
   envVars:
     ARROW_DEFAULT_MEMORY_POOL: "system"
     INGEST_LOG_LEVEL: WARNING
@@ -690,9 +700,9 @@ nv-ingest:
     REDIS_INGEST_TASK_QUEUE: "ingest_task_queue"
     NV_INGEST_DEFAULT_TIMEOUT_MS: "1234"
     MAX_INGEST_PROCESS_WORKERS: 16
-    EMBEDDING_NIM_ENDPOINT: "http://llama-stack-service:8321/v1/openai/v1"
+    EMBEDDING_NIM_ENDPOINT: "http://embedded-qa-predictor.nimtest.svc.cluster.local:8000/v1/"
     EMBEDDING_NIM_MODEL_NAME: "nvidia/llama-3.2-nv-embedqa-1b-v2"
-    MESSAGE_CLIENT_HOST: "rag-redis-master"
+    MESSAGE_CLIENT_HOST: "nim-rag-redis-master"
     MESSAGE_CLIENT_PORT: 6379
     MESSAGE_CLIENT_TYPE: "redis"
     MINIO_INTERNAL_ADDRESS: "minio-service:9000"

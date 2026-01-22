@@ -12,6 +12,9 @@ pip install llama-stack-client==v0.3.5
 
 llama-stack-client inference chat-completion --message "hello, what model are you"
 
+oc adm policy add-scc-to-user anyuid -z nim-rag-nv-ingest
+
+helm install nim-rag ./nvidia-blueprint-rag/ --set ngcApiSecret.password="nvapi-" --set imagePullSecret.password="nvapi-"
 
 
   ##===LLM Model specific configurations===
@@ -43,6 +46,8 @@ llama-stack-client inference chat-completion --message "hello, what model are yo
   ##===VLM Model specific configurations===
   APP_VLM_SERVERURL: "http://nim-vlm:8000/v1"
   APP_VLM_MODELNAME: "nvidia/llama-3.1-nemotron-nano-vl-8b-v1"
+
+  curl http://rag-server:8081/health?check_dependencies=true
 
 
 
