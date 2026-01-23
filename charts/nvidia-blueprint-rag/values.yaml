@@ -120,9 +120,8 @@ envVars:
 
   ##===LLM Model specific configurations===
   # APP_LLM_MODELNAME: "nvidia/llama-3.3-nemotron-super-49b-v1.5"
-
-  APP_LLM_MODELNAME: "nvidia0/nvidia/llama-3.3-nemotron-super-49b-v1.5"
   # URL on which LLM model is hosted. If "", Nvidia hosted API is used
+  APP_LLM_MODELNAME: "nvidia0/nvidia/llama-3.3-nemotron-super-49b-v1.5"
   APP_LLM_SERVERURL: "http://llama-stack-service:8321/v1/openai"
   # LLM model parameters
   LLM_MAX_TOKENS: "32768"
@@ -130,16 +129,16 @@ envVars:
   LLM_TOP_P: "1.0"
 
   ##===Query Rewriter Model specific configurations===
-  APP_QUERYREWRITER_MODELNAME: "nvidia0/nvidia/llama-3.3-nemotron-super-49b-v1.5"
   # URL on which query rewriter model is hosted. If "", Nvidia hosted API is used
+  APP_QUERYREWRITER_MODELNAME: "nvidia0/nvidia/llama-3.3-nemotron-super-49b-v1.5"
   APP_QUERYREWRITER_SERVERURL: "http://llama-stack-service:8321/v1/openai"
 
   ##===Filter Expression Generator Model specific configurations===
-  APP_FILTEREXPRESSIONGENERATOR_MODELNAME: "nvidia0/nvidia/llama-3.3-nemotron-super-49b-v1.5"
   # URL on which filter expression generator model is hosted. If "", Nvidia hosted API is used
+  APP_FILTEREXPRESSIONGENERATOR_MODELNAME: "nvidia0/nvidia/llama-3.3-nemotron-super-49b-v1.5"
   APP_FILTEREXPRESSIONGENERATOR_SERVERURL: "http://llama-stack-service:8321/v1/openai"
   # enable filter expression generator for natural language to filter expression conversion
-  ENABLE_FILTER_GENERATOR: "False"
+  ENABLE_FILTER_GENERATOR: "True"
 
   ##===Embedding Model specific configurations===
   # URL on which embedding model is hosted. If "", Nvidia hosted API is used
@@ -203,7 +202,7 @@ envVars:
 
   # === Reflection ===
   # enable reflection (context relevance and response groundedness checking) in the rag chain
-  ENABLE_REFLECTION: "False"
+  ENABLE_REFLECTION: "True"
   # Maximum number of context relevance loop iterations
   MAX_REFLECTION_LOOP: "3"
   # Minimum relevance score threshold (0-2)
@@ -211,9 +210,10 @@ envVars:
   # Minimum groundedness score threshold (0-2)
   RESPONSE_GROUNDEDNESS_THRESHOLD: "1"
   # reflection llm
-  REFLECTION_LLM: "nvidia/llama-3.3-nemotron-super-49b-v1.5"
   # reflection llm server url. If "", Nvidia hosted API is used
-  # REFLECTION_LLM_SERVERURL: "http://llama-stack-service:8321/v1/openai"
+  # REFLECTION_LLM: "nvidia/llama-3.3-nemotron-super-49b-v1.5"
+  REFLECTION_LLM: "nvidia0/nvidia/llama-3.3-nemotron-super-49b-v1.5"
+  REFLECTION_LLM_SERVERURL: "http://llama-stack-service:8321/v1/openai"
 
   # Choose whether to enable source metadata in document content during generation
   ENABLE_SOURCE_METADATA: "False"
@@ -304,8 +304,8 @@ ingestor-server:
     # === Embeddings Configurations ===
     # APP_EMBEDDINGS_SERVERURL: "http://embedded-qa-predictor.nimtest.svc.cluster.local:8000/v1/"
     # APP_EMBEDDINGS_MODELNAME: "nvidia/llama-3.2-nv-embedqa-1b-v2"
-    APP_EMBEDDINGS_SERVERURL: "http://llama-stack-service:8321/v1/openai"
-    APP_EMBEDDINGS_MODELNAME: "vllm_embed_0/nvidia/llama-3.2-nv-embedqa-1b-v2"
+    APP_EMBEDDINGS_SERVERURL: "http://llama-stack-service:8321/v1/openai/v1"
+    APP_EMBEDDINGS_MODELNAME: "vllm_embed_1/nvidia/llama-3.2-nv-embedqa-1b-v2"
     APP_EMBEDDINGS_DIMENSIONS: "2048"
 
     # === NV-Ingest Configurations ===
@@ -422,43 +422,6 @@ frontend:
     - name: VITE_MILVUS_URL
       value: "http://nim-milvus:19530"
 
-# -- Elasticsearch dependency toggle
-# subsection: elasticsearch
-elasticsearch:
-  enabled: false
-  fullnameOverride: elasticsearch
-  security:
-    enabled: false
-    tls:
-      restEncryption: false
-  extraConfig:
-    discovery.type: single-node
-  master:
-    masterOnly: false
-    replicaCount: 1
-  data:
-    replicaCount: 0
-  coordinating:
-    replicaCount: 0
-  ingest:
-    enabled: false
-  global:
-    security:
-      allowInsecureImages: true
-  image:
-    registry: docker.io
-    repository: bitnamilegacy/elasticsearch
-    tag: 9.0.3-debian-12-r1
-  volumePermissions:
-    image:
-      registry: docker.io
-      repository: bitnamilegacy/os-shell
-      tag: 12-debian-12-r48
-  sysctlImage:
-    registry: docker.io
-    repository: bitnamilegacy/os-shell
-    tag: 12-debian-12-r48
-
 # -- Observability
 # subsection: serviceMonitor
 serviceMonitor:
@@ -554,27 +517,6 @@ opentelemetry-collector:
 # subsection: zipkin
 zipkin:
   enabled: false
-
-# subsection: kube-prometheus-stack
-kube-prometheus-stack:
-  enabled: false
-  prometheus:
-    serviceMonitor:
-      interval: "1s"
-    prometheusSpec:
-      scrapeInterval: "1s"
-      evaluationInterval: "1s"
-      additionalScrapeConfigs:
-        - job_name: rag-app
-          scrape_interval: 5s
-          metrics_path: /metrics
-          static_configs:
-            - targets:
-                # If the app is in another namespace, use rag-server.<namespace>.svc:8081
-                - rag-server:8081
-  grafana:
-    adminUser: admin
-    adminPassword: "admin"
 
 # -- NIMs (dependencies) configuration
 # subsection: nim-llm
@@ -686,10 +628,15 @@ nv-ingest:
   resources:
     limits:
       memory: 16Gi
-      cpu: "6"
+      cpu: "4"
     requests:
       memory: 10Gi
       cpu: "4"
+
+  tolerations:
+  - effect: NoSchedule
+    key: nvidia.com/gpu
+    operator: Exists
 
   podSecurityContext:
     fsGroup: 1000
