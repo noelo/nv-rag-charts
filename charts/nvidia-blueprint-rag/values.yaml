@@ -121,9 +121,9 @@ envVars:
   ##===LLM Model specific configurations===
   # APP_LLM_MODELNAME: "nvidia/llama-3.3-nemotron-super-49b-v1.5"
 
-  APP_LLM_MODELNAME: "nvidia/llama-3.3-nemotron-super-49b-v1.5"
+  APP_LLM_MODELNAME: "nvidia0/nvidia/llama-3.3-nemotron-super-49b-v1.5"
   # URL on which LLM model is hosted. If "", Nvidia hosted API is used
-  # APP_LLM_SERVERURL: "http://llama-stack-service:8321/v1/openai"
+  APP_LLM_SERVERURL: "http://llama-stack-service:8321/v1/openai"
   # LLM model parameters
   LLM_MAX_TOKENS: "32768"
   LLM_TEMPERATURE: "0"
@@ -148,7 +148,7 @@ envVars:
 
   ##===Reranking Model specific configurations===
   # URL on which ranking model is hosted. If "", Nvidia hosted API is used
-  APP_RANKING_SERVERURL: "http://rerank-predictor.nimtest.svc.cluster.local:8000"
+  APP_RANKING_SERVERURL: "http://rerank-predictor.nimtest.svc.cluster.local:8000/v1"
   APP_RANKING_MODELNAME: "nvidia/llama-3.2-nv-rerankqa-1b-v2"
   ENABLE_RERANKER: "True"
   # Default confidence threshold for filtering documents by reranker relevance scores (0.0 to 1.0)
