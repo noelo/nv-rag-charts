@@ -16,6 +16,16 @@ oc adm policy add-scc-to-user anyuid -z nim-rag-nv-ingest
 
 helm install nim-rag ./nvidia-blueprint-rag/ --set ngcApiSecret.password="nvapi-" --set imagePullSecret.password="nvapi-"
 
+Operators
+
+Cluser Observability
+Grafana-operator
+Open Telemetry
+
+Install collector.yaml
+
+https://github.com/rhoai-genaiops/genaiops-helmcharts/tree/main/charts/grafana/templates
+
 
   ##===LLM Model specific configurations===
   APP_LLM_MODELNAME: "nvidia/llama-3.3-nemotron-super-49b-v1.5"

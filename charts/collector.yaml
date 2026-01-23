@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: data-science-collector
+  namespace: redhat-ods-monitoring
+  labels:
+    app.kubernetes.io/component: opentelemetry-collector
+    app.kubernetes.io/instance: redhat-ods-monitoring.data-science-collector
+    app.kubernetes.io/managed-by: opentelemetry-operator
+    app.kubernetes.io/part-of: opentelemetry
+spec:
+  ports:
+  - appProtocol: grpc
+    name: otlp-grpc
+    port: 4317
+    protocol: TCP
+    targetPort: 4317
+  - appProtocol: http
+    name: otlp-http
+    port: 4318
+    protocol: TCP
+    targetPort: 4318
+  - name: prometheus
+    port: 8889
+    protocol: TCP
+    targetPort: 8889
+  selector:
+    app.kubernetes.io/component: opentelemetry-collector
+    app.kubernetes.io/instance: redhat-ods-monitoring.data-science-collector
+    app.kubernetes.io/managed-by: opentelemetry-operator
+    app.kubernetes.io/part-of: opentelemetry
+  type: ClusterIP
