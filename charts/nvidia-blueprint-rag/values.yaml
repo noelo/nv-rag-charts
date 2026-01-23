@@ -627,11 +627,11 @@ nv-ingest:
     tag: "25.9.0"
   resources:
     limits:
-      memory: 16Gi
-      cpu: "4"
+      memory: 96Gi
+      cpu: "16"
     requests:
-      memory: 10Gi
-      cpu: "4"
+      memory: 96Gi
+      cpu: "16"
 
   tolerations:
   - effect: NoSchedule
@@ -671,8 +671,12 @@ nv-ingest:
     MILVUS_ENDPOINT: "http://nim-milvus:19530"
     OTEL_EXPORTER_OTLP_ENDPOINT: "otel-collector:4317"
     MODEL_PREDOWNLOAD_PATH: "/workspace/models/"
-    INSTALL_AUDIO_EXTRACTION_DEPS: "true"
+    INSTALL_AUDIO_EXTRACTION_DEPS: "false"
     TEMP_DIR: "/tmp-data"
+
+    RAY_num_grpc_threads: "1"
+    RAY_num_server_call_thread: "1"
+    RAY_worker_num_grpc_internal_threads: "1"
 
     # Paddle OCR endpoints
     PADDLE_GRPC_ENDPOINT: nv-ingest-ocr:8001
