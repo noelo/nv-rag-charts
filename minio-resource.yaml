@@ -77,6 +77,8 @@ spec:
                 secretKeyRef:
                   name: minio-secret
                   key: minio_root_password
+            - name: MINIO_IDENTITY_OPENID_ENABLE
+              value: "off"
           ports:
             - containerPort: 9000
               protocol: TCP
@@ -89,7 +91,7 @@ spec:
               subPath: minio
           terminationMessagePolicy: File
           image: >-
-            quay.io/minio/minio:latest
+            quay.io/minio/minio:RELEASE.2025-03-12T18-04-18Z
           args:
             - server
             - /data

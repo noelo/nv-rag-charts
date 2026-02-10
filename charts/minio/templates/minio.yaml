@@ -77,6 +77,8 @@ spec:
                 secretKeyRef:
                   name: minio-secret
                   key: minio_root_password
+            - name: MINIO_IDENTITY_OPENID_ENABLE
+              value: "off"
           ports:
             - containerPort: 9000
               protocol: TCP

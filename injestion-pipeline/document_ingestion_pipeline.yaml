@@ -1,0 +1,512 @@
+# PIPELINE DEFINITION
+# Name: document-ingestion-pipeline
+# Description: Document ingestion pipeline: S3 ingestion, docling conversion, and Milvus storage
+# Inputs:
+#    document_metadata: dict
+#    ingestion_document_s3_location: str [Default: 's3://default-bucket/documents/']
+components:
+  comp-conversion-stage:
+    executorLabel: exec-conversion-stage
+    inputDefinitions:
+      parameters:
+        input_document_metadata:
+          parameterType: STRUCT
+    outputDefinitions:
+      parameters:
+        Output:
+          parameterType: STRUCT
+  comp-createpvc:
+    executorLabel: exec-createpvc
+    inputDefinitions:
+      parameters:
+        access_modes:
+          description: 'AccessModes to request for the provisioned PVC. May
+
+            be one or more of ``''ReadWriteOnce''``, ``''ReadOnlyMany''``, ``''ReadWriteMany''``,
+            or
+
+            ``''ReadWriteOncePod''``. Corresponds to `PersistentVolumeClaim.spec.accessModes
+            <https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes>`_.'
+          parameterType: LIST
+        annotations:
+          description: Annotations for the PVC's metadata. Corresponds to `PersistentVolumeClaim.metadata.annotations
+            <https://kubernetes.io/docs/reference/kubernetes-api/config-and-storage-resources/persistent-volume-claim-v1/#PersistentVolumeClaim>`_.
+          isOptional: true
+          parameterType: STRUCT
+        pvc_name:
+          description: 'Name of the PVC. Corresponds to `PersistentVolumeClaim.metadata.name
+            <https://kubernetes.io/docs/reference/kubernetes-api/config-and-storage-resources/persistent-volume-claim-v1/#PersistentVolumeClaim>`_.
+            Only one of ``pvc_name`` and ``pvc_name_suffix`` can
+
+            be provided.'
+          isOptional: true
+          parameterType: STRING
+        pvc_name_suffix:
+          description: 'Prefix to use for a dynamically generated name, which
+
+            will take the form ``<argo-workflow-name>-<pvc_name_suffix>``. Only one
+
+            of ``pvc_name`` and ``pvc_name_suffix`` can be provided.'
+          isOptional: true
+          parameterType: STRING
+        size:
+          description: The size of storage requested by the PVC that will be provisioned.
+            For example, ``'5Gi'``. Corresponds to `PersistentVolumeClaim.spec.resources.requests.storage
+            <https://kubernetes.io/docs/reference/kubernetes-api/config-and-storage-resources/persistent-volume-claim-v1/#PersistentVolumeClaimSpec>`_.
+          parameterType: STRING
+        storage_class_name:
+          defaultValue: ''
+          description: 'Name of StorageClass from which to provision the PV
+
+            to back the PVC. ``None`` indicates to use the cluster''s default
+
+            storage_class_name. Set to ``''''`` for a statically specified PVC.'
+          isOptional: true
+          parameterType: STRING
+        volume_name:
+          description: 'Pre-existing PersistentVolume that should back the
+
+            provisioned PersistentVolumeClaim. Used for statically
+
+            specified PV only. Corresponds to `PersistentVolumeClaim.spec.volumeName
+            <https://kubernetes.io/docs/reference/kubernetes-api/config-and-storage-resources/persistent-volume-claim-v1/#PersistentVolumeClaimSpec>`_.'
+          isOptional: true
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        name:
+          parameterType: STRING
+  comp-deletepvc:
+    executorLabel: exec-deletepvc
+    inputDefinitions:
+      parameters:
+        pvc_name:
+          description: Name of the PVC to delete. Supports passing a runtime-generated
+            name, such as a name provided by ``kubernetes.CreatePvcOp().outputs['name']``.
+          parameterType: STRING
+  comp-ingestion-stage:
+    executorLabel: exec-ingestion-stage
+    inputDefinitions:
+      parameters:
+        document_metadata:
+          parameterType: STRUCT
+        ingestion_document_s3_location:
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        Output:
+          parameterType: STRUCT
+  comp-storage-stage:
+    executorLabel: exec-storage-stage
+    inputDefinitions:
+      parameters:
+        input_document_metadata:
+          parameterType: STRUCT
+deploymentSpec:
+  executors:
+    exec-conversion-stage:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - conversion_stage
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'httpx' 'docling-core'\
+          \  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.15.2'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef conversion_stage(\n    input_document_metadata: Dict[str, str]\n\
+          ) -> Dict[str, str]:\n    \"\"\"Conversion Stage: Convert document to DoclingDocument\
+          \ using docling serve API\"\"\"\n    import os\n    import sys\n    import\
+          \ asyncio\n    import httpx\n    import json\n    from dotenv import load_dotenv\n\
+          \n\n    async def convert_document():\n        print(\"Starting conversion\
+          \ stage\")\n\n        source_file = TASK_STORAGE+input_document_metadata[FILE_MD5_HASH]\n\
+          \n        # Verify the file exists and read it\n        if not os.path.exists(source_file):\n\
+          \            raise FileNotFoundError(f\"Document file not found at {source_file}\"\
+          )\n\n\n        # Read file content\n        with open(source_file, \"rb\"\
+          ) as f:\n            ingested_content = f.read()\n            print(\n \
+          \               f\"Successfully read {len(ingested_content)} bytes from\
+          \ Kubeflow artifact storage\"\n            )\n\n        document_metadata\
+          \ = input_document_metadata\n\n        # Get docling serve API endpoint\
+          \ from environment variable\n        docling_api_url = os.environ.get(\n\
+          \            \"DOCLING_API_URL\", \"http://docling-serve:5000/convert\"\n\
+          \        )\n        print(f\"Calling docling serve API at: {docling_api_url}\"\
+          )\n\n        # Configure conversion options for docling\n        conversion_options\
+          \ = {\n        \"from_formats\": [\"pdf\"],\n        \"to_formats\": [\"\
+          md\", \"json\", \"html\", \"text\", \"doctags\"],\n        \"image_export_mode\"\
+          : \"placeholder\",\n        \"do_ocr\": True,\n        \"force_ocr\": False,\n\
+          \        \"ocr_engine\": \"easyocr\",\n        \"ocr_lang\": [\"en\"],\n\
+          \        \"pdf_backend\": \"dlparse_v2\",\n        \"table_mode\": \"fast\"\
+          ,\n        \"abort_on_error\": False,\n        }\n\n        file_type =\
+          \ document_metadata.get(\"file_type\", 'application/pdf')\n        document_name\
+          \ = document_metadata.get(DOCUMENT_NAME)\n\n        print(f\"Conversion\
+          \ options: {json.dumps(conversion_options, indent=2)}\")\n\n        # Call\
+          \ docling serve API to convert to markdown using async httpx client\n  \
+          \      async with httpx.AsyncClient(timeout=300.0) as client:\n        \
+          \    files = {\"files\": (document_name, ingested_content,file_type)}\n\n\
+          \            response = await client.post(docling_api_url, files=files,\
+          \ data=conversion_options)\n\n            if response.status_code != 200:\n\
+          \                raise Exception(\n                    f\"Docling API returned\
+          \ status code {response.status_code}: {response.text}\"\n              \
+          \  )\n\n            response_data = response.json()\n            docling_document\
+          \ = response_data.document.json_content\n\n        print(\n            f\"\
+          Document has {len(docling_document.pages) if hasattr(docling_document, 'pages')\
+          \ else 0} pages\"\n        )\n\n        destination_file = source_file+\"\
+          .json\"\n\n        # Serialize DoclingDocument to JSON for stage 3\n   \
+          \     with open(destination_file, \"w\", encoding=\"utf-8\") as f:\n   \
+          \         # Export document to JSON\n            doc_json = docling_document.model_dump_json(indent=2)\n\
+          \            f.write(doc_json)\n        print(\"DoclingDocument written\
+          \ successfully\")\n\n        print(\"Conversion stage complete, moving to\
+          \ stage 3\")\n\n        return document_metadata\n\n    try:\n        dotenv_path\
+          \ = Path(CONFIG_SECRETS_LOCATION+'.env')\n        load_dotenv(dotenv_path=dotenv_path)\n\
+          \        res = asyncio.run(convert_document())\n        return res\n   \
+          \ except FileNotFoundError as fnf:\n        print(f\"ERROR: {fnf}\", file=sys.stderr)\n\
+          \        sys.exit(1)\n    except httpx.HTTPError as http_err:\n        print(f\"\
+          ERROR: Failed to call docling API - {http_err}\", file=sys.stderr)\n   \
+          \     sys.exit(1)\n    except Exception as e:\n        print(f\"ERROR: Conversion\
+          \ failed - {type(e).__name__}: {e}\", file=sys.stderr)\n        sys.exit(1)\n\
+          \n"
+        image: registry.redhat.io/ubi10/python-312-minimal
+    exec-createpvc:
+      container:
+        image: argostub/createpvc
+    exec-deletepvc:
+      container:
+        image: argostub/deletepvc
+    exec-ingestion-stage:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - ingestion_stage
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'boto3' 'dotenv'\
+          \  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.15.2'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef ingestion_stage(\n    ingestion_document_s3_location: str,\n\
+          \    document_metadata: Dict[str, str],\n) -> Dict[str, str]:  \n\n    \"\
+          \"\"Ingestion Stage: Read document from S3 and process metadata\"\"\"\n\
+          \    import sys\n    import boto3\n    import os\n    import hashlib\n \
+          \   from urllib.parse import urlparse\n    from dotenv import load_dotenv\n\
+          \n    dotenv_path = Path(CONFIG_SECRETS_LOCATION+'.env')\n    load_dotenv(dotenv_path=dotenv_path)\n\
+          \    aws_access_key_id = os.environ.get(\"aws_access_key_id\")\n    aws_secret_access_key\
+          \ = os.environ.get(\"aws_secret_access_key\")\n    region = os.environ.get(\"\
+          aws_region\", \"us-east-1\")\n\n    try:\n        # Parse S3 location\n\
+          \        print(f\"Parsing S3 location: {ingestion_document_s3_location}\"\
+          )\n\n        # Parse the S3 URI (e.g., s3://bucket-name/path/to/file.pdf)\n\
+          \        parsed_url = urlparse(ingestion_document_s3_location)\n\n     \
+          \   if parsed_url.scheme != \"s3\":\n            raise ValueError(\n   \
+          \             f\"Invalid S3 URI scheme: {parsed_url.scheme}. Expected 's3://'\"\
+          \n            )\n\n        bucket_name = parsed_url.netloc\n        object_key\
+          \ = parsed_url.path.lstrip(\"/\")\n\n        if not bucket_name:\n     \
+          \       raise ValueError(\"S3 bucket name is empty\")\n        if not object_key:\n\
+          \            raise ValueError(\"S3 object key is empty\")\n\n        # Extract\
+          \ document name from the object key\n        document_name = object_key.split(\"\
+          /\")[-1]\n\n        print(f\"S3 Bucket: {bucket_name}\")\n        print(f\"\
+          Object Key: {object_key}\")\n        print(f\"Document Name: {document_name}\"\
+          )\n\n        # Add bucket name and document name to metadata\n        if\
+          \ document_metadata is None:\n            document_metadata = {}\n\n   \
+          \     document_metadata[S3_BUCKET_NAME]= bucket_name\n        document_metadata[DOCUMENT_NAME]=document_name\n\
+          \n        # Read file from S3\n        print(\"Connecting to S3 and reading\
+          \ file...\")\n\n        if not aws_access_key_id or not aws_secret_access_key:\n\
+          \            raise ValueError(\n                \"Credentials file must\
+          \ contain 'aws_access_key_id' and 'aws_secret_access_key'\"\n          \
+          \  )\n\n        print(f\"AWS Region: {region}\")\n\n        # Create S3\
+          \ client with credentials from file\n        s3_client = boto3.client(\n\
+          \            \"s3\",\n            aws_access_key_id=aws_access_key_id,\n\
+          \            aws_secret_access_key=aws_secret_access_key,\n            region_name=region,\n\
+          \        )\n\n        response = s3_client.get_object(Bucket=bucket_name,\
+          \ Key=object_key)\n        file_content = response[\"Body\"].read()\n\n\
+          \        print(f\"Successfully read {len(file_content)} bytes from S3\"\
+          )\n        print(f\"Content type: {response.get('ContentType', 'unknown')}\"\
+          )\n\n        # Generate MD5 hash of file contents\n\n        md5_hash =\
+          \ hashlib.md5(file_content).hexdigest()\n        print(f\"MD5 hash: {md5_hash}\"\
+          )\n\n        # Add MD5 hash to metadata\n        document_metadata[FILE_MD5_HASH]=\
+          \ md5_hash\n\n        print(f\"Final metadata: {document_metadata}\")\n\n\
+          \        destination_file = TASK_STORAGE+md5_hash+\".raw\"\n        # Write\
+          \ file to Kubeflow-managed output path for next stage\n        print(f\"\
+          Writing file to output path: {destination_file}\")\n\n        with open(TASK_STORAGE+md5_hash,\
+          \ \"wb\") as file:\n            file.write(file_content)\n\n\n        print(\n\
+          \            f\"File written successfully to {destination_file} ({len(file_content)}\
+          \ bytes)\"\n        )\n        print(\"Ingestion stage complete\")\n   \
+          \     return document_metadata\n\n    except ValueError as ve:\n       \
+          \ print(f\"ERROR: Invalid input - {ve}\", file=sys.stderr)\n        sys.exit(1)\n\
+          \    except Exception as e:\n        print(\n            f\"ERROR: Failed\
+          \ to read document from S3 - {type(e).__name__}: {e}\",\n            file=sys.stderr,\n\
+          \        )\n        sys.exit(1)\n\n"
+        image: registry.redhat.io/ubi10/python-312-minimal
+    exec-storage-stage:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - storage_stage
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'docling-core'\
+          \ 'pymilvus'  &&  python3 -m pip install --quiet --no-warn-script-location\
+          \ 'kfp==2.15.2' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"\
+          3.9\"' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef storage_stage(\n    input_document_metadata: Dict[str, str]\n\
+          ):\n    \"\"\"Storage Stage: Chunk DoclingDocument and write to Milvus\"\
+          \"\"\n    import os\n    import sys\n    import json\n    from docling_core.types.doc.document\
+          \ import DoclingDocument\n    from docling_core.transforms.chunker.hybrid_chunker\
+          \ import HybridChunker\n    from dotenv import load_dotenv\n    from pymilvus\
+          \ import (\n        connections,\n        Collection,\n        FieldSchema,\n\
+          \        CollectionSchema,\n        DataType,\n        utility,\n    )\n\
+          \n    print(\"Starting storage stage\")        \n    dotenv_path = Path(CONFIG_SECRETS_LOCATION+'.env')\n\
+          \    load_dotenv(dotenv_path=dotenv_path)\n\n    milvus_host = os.environ.get(\"\
+          MILVUS_HOST\", \"localhost\")\n    milvus_port = os.environ.get(\"MILVUS_PORT\"\
+          , \"19530\")\n\n    try:\n        # Read metadata from previous stage\n\
+          \        source_file = TASK_STORAGE+input_document_metadata[FILE_MD5_HASH]+'.json'\n\
+          \n        # Verify the file exists and read it\n        if not os.path.exists(source_file):\n\
+          \            raise FileNotFoundError(f\"Document file not found at {source_file}\"\
+          )\n\n\n        # Read file content\n        with open(source_file, \"rb\"\
+          ) as f:\n            ingested_content = f.read()\n            print(\n \
+          \               f\"Successfully read {len(ingested_content)} bytes from\
+          \ Kubeflow artifact storage\"\n            )\n\n        document_metadata\
+          \ = input_document_metadata\n\n        # Deserialize JSON to DoclingDocument\n\
+          \        docling_document = DoclingDocument.model_validate_json(ingested_content)\n\
+          \n        print(\"Successfully loaded DoclingDocument\")\n        print(\n\
+          \            f\"Document has {len(docling_document.pages) if hasattr(docling_document,\
+          \ 'pages') else 0} pages\"\n        )\n\n        collection_name = document_metadata.get(S3_BUCKET_NAME)\n\
+          \        document_name = document_metadata.get(DOCUMENT_NAME)\n\n      \
+          \  if not collection_name:\n            raise ValueError(\"s3_bucket_name\
+          \ not found in document_metadata\")\n\n        print(f\"\\nUsing Milvus\
+          \ collection name: {collection_name}\")\n\n        # Connect to Milvus\n\
+          \n        print(f\"Connecting to Milvus at {milvus_host}:{milvus_port}\"\
+          )\n        connections.connect(alias=\"default\", host=milvus_host, port=milvus_port)\n\
+          \n        # Define collection schema if it doesn't exist\n        collection_name\
+          \ = collection_name.replace(\"-\", \"_\").replace(\n            \".\", \"\
+          _\"\n        )  # Sanitize collection name\n\n        if not utility.has_collection(collection_name):\n\
+          \            print(f\"Creating new collection: {collection_name}\")\n  \
+          \          fields = [\n                FieldSchema(\n                  \
+          \  name=\"id\", dtype=DataType.INT64, is_primary=True, auto_id=True\n  \
+          \              ),\n                FieldSchema(\n                    name=\"\
+          chunk_text\", dtype=DataType.VARCHAR, max_length=65535\n               \
+          \ ),\n                FieldSchema(\n                    name=\"document_name\"\
+          , dtype=DataType.VARCHAR, max_length=512\n                ),\n         \
+          \       FieldSchema(name=\"chunk_index\", dtype=DataType.INT64),\n     \
+          \           FieldSchema(\n                    name=\"metadata_json\", dtype=DataType.VARCHAR,\
+          \ max_length=2048\n                ),\n            ]\n            schema\
+          \ = CollectionSchema(\n                fields=fields, description=f\"Document\
+          \ chunks from {collection_name}\"\n            )\n            collection\
+          \ = Collection(name=collection_name, schema=schema)\n            print(f\"\
+          Collection {collection_name} created successfully\")\n        else:\n  \
+          \          print(f\"Using existing collection: {collection_name}\")\n  \
+          \          collection = Collection(name=collection_name)\n\n        print(\"\
+          Chunking document with HybridChunker...\")\n        chunker = HybridChunker()\n\
+          \n        # Chunk the document\n        chunk_iter = chunker.chunk(dl_doc=docling_document)\n\
+          \n        for i, chunk in enumerate(chunk_iter):\n            enriched_text\
+          \ = chunker.contextualize(chunk=chunk)\n\n        chunk_texts = []\n   \
+          \     document_names = []\n        chunk_indices = []\n        metadata_jsons\
+          \ = []\n\n        for idx, chunk in enumerate(chunk_iter):\n           \
+          \ enriched_text = chunker.contextualize(chunk=chunk)\n            chunk_texts.append(enriched_text)\n\
+          \            document_names.append(document_name or \"unknown\")\n     \
+          \       chunk_indices.append(idx)\n            metadata_jsons.append(json.dumps(document_metadata))\n\
+          \n        chunk_count = len(chunk_texts)\n\n        # Insert chunks into\
+          \ Milvus\n        print(\n            f\"\\nInserting {chunk_count} chunks\
+          \ into Milvus collection '{collection_name}'...\"\n        )\n\n       \
+          \ entities = [chunk_texts, document_names, chunk_indices, metadata_jsons]\n\
+          \n        insert_result = collection.insert(entities)\n        collection.flush()\n\
+          \n        print(f\"Successfully inserted {chunk_count} chunks into Milvus\"\
+          )\n        print(f\"Insert result: {insert_result}\")\n\n        # Disconnect\
+          \ from Milvus\n        connections.disconnect(\"default\")\n        print(\"\
+          Disconnected from Milvus\")\n\n    except FileNotFoundError as fnf:\n  \
+          \      print(f\"ERROR: {fnf}\", file=sys.stderr)\n        sys.exit(1)\n\
+          \    except Exception as e:\n        print(\n            f\"ERROR: Failed\
+          \ to process document - {type(e).__name__}: {e}\",\n            file=sys.stderr,\n\
+          \        )\n        import traceback\n\n        traceback.print_exc()\n\
+          \        sys.exit(1)\n\n    print(\"\\n\" + \"=\" * 80)\n    print(\"Pipeline\
+          \ complete\")\n\n"
+        image: registry.redhat.io/ubi10/python-312-minimal
+pipelineInfo:
+  description: 'Document ingestion pipeline: S3 ingestion, docling conversion, and
+    Milvus storage'
+  name: document-ingestion-pipeline
+root:
+  dag:
+    tasks:
+      conversion-stage:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-conversion-stage
+        dependentTasks:
+        - createpvc
+        - ingestion-stage
+        inputs:
+          parameters:
+            input_document_metadata:
+              taskOutputParameter:
+                outputParameterKey: Output
+                producerTask: ingestion-stage
+        taskInfo:
+          name: conversion-stage
+      createpvc:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-createpvc
+        inputs:
+          parameters:
+            access_modes:
+              runtimeValue:
+                constant:
+                - ReadWriteOnce
+            pvc_name_suffix:
+              runtimeValue:
+                constant: -ingestion-pvc
+            size:
+              runtimeValue:
+                constant: 5Gi
+        taskInfo:
+          name: createpvc
+      deletepvc:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-deletepvc
+        dependentTasks:
+        - createpvc
+        - storage-stage
+        inputs:
+          parameters:
+            pvc_name:
+              taskOutputParameter:
+                outputParameterKey: name
+                producerTask: createpvc
+        taskInfo:
+          name: deletepvc
+      ingestion-stage:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-ingestion-stage
+        dependentTasks:
+        - createpvc
+        inputs:
+          parameters:
+            document_metadata:
+              componentInputParameter: document_metadata
+            ingestion_document_s3_location:
+              componentInputParameter: ingestion_document_s3_location
+        taskInfo:
+          name: ingestion-stage
+      storage-stage:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-storage-stage
+        dependentTasks:
+        - createpvc
+        - ingestion-stage
+        inputs:
+          parameters:
+            input_document_metadata:
+              taskOutputParameter:
+                outputParameterKey: Output
+                producerTask: ingestion-stage
+        taskInfo:
+          name: storage-stage
+  inputDefinitions:
+    parameters:
+      document_metadata:
+        parameterType: STRUCT
+      ingestion_document_s3_location:
+        defaultValue: s3://default-bucket/documents/
+        isOptional: true
+        parameterType: STRING
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.15.2
+---
+platforms:
+  kubernetes:
+    deploymentSpec:
+      executors:
+        exec-conversion-stage:
+          activeDeadlineSeconds: '600'
+          pvcMount:
+          - mountPath: /mnt/storage
+            pvcNameParameter:
+              taskOutputParameter:
+                outputParameterKey: name
+                producerTask: createpvc
+            taskOutputParameter:
+              outputParameterKey: name
+              producerTask: createpvc
+        exec-ingestion-stage:
+          pvcMount:
+          - mountPath: /mnt/storage
+            pvcNameParameter:
+              taskOutputParameter:
+                outputParameterKey: name
+                producerTask: createpvc
+            taskOutputParameter:
+              outputParameterKey: name
+              producerTask: createpvc
+          secretAsVolume:
+          - mountPath: /tmp/ingestion-config
+            optional: false
+            secretName: ingestion-s3-secret
+            secretNameParameter:
+              runtimeValue:
+                constant: ingestion-s3-secret
+        exec-storage-stage:
+          pvcMount:
+          - mountPath: /mnt/storage
+            pvcNameParameter:
+              taskOutputParameter:
+                outputParameterKey: name
+                producerTask: createpvc
+            taskOutputParameter:
+              outputParameterKey: name
+              producerTask: createpvc

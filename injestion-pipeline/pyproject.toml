@@ -5,5 +5,11 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "kfp>=2.0.0",
+    "boto3>=1.42.44",
+    "docling-core[chunking]>=2.64.0",
+    "dotenv>=0.9.9",
+    "httpx>=0.28.1",
+    "kfp[kubernetes]>=2.0.0",
+    "pathlib>=1.0.1",
+    "pymilvus>=2.6.8",
 ]
