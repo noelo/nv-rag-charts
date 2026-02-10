@@ -408,10 +408,10 @@ def storage_stage(
 
 
 @dsl.pipeline(
-    name="document-ingestion-pipeline",
+    name="rag_ingest",
     description="Document ingestion pipeline: S3 ingestion, docling conversion, and Milvus storage",
 )
-def document_ingestion_pipeline(
+def doc_ingestion_pl(
     document_metadata: Dict[str, str],
     ingestion_document_s3_location: str = "s3://default-bucket/documents/",
 ): 
@@ -419,11 +419,18 @@ def document_ingestion_pipeline(
     CONFIG_SECRETS_LOCATION = "/tmp/ingestion-config/"
 
     conversion_timeout = os.environ.get("DOCLING_TIMEOUT", 600)
+    # pvc1 = kubernetes.CreatePVC(
+    #     pvc_name_suffix='-ingest',
+    #     access_modes=['ReadWriteOnce'],
+    #     size='5Gi',
+    #     storage_class_name="gp3-csi"
+    # )
     pvc1 = kubernetes.CreatePVC(
-        pvc_name_suffix='-ingest',
+        # can also use pvc_name instead of pvc_name_suffix to use a pre-existing PVC
+        pvc_name_suffix='-my-pvc',
         access_modes=['ReadWriteOnce'],
         size='5Gi',
-        storage_class_name="gp3-csi"
+        storage_class_name='gp3-csi',
     )
    
     """Define the document ingestion pipeline"""
@@ -482,7 +489,7 @@ def document_ingestion_pipeline(
 if __name__ == "__main__":
     # Compile the pipeline to YAML
     compiler.Compiler().compile(
-        pipeline_func=document_ingestion_pipeline,
-        package_path="document_ingestion_pipeline.yaml",
+        pipeline_func=doc_ingestion_pl,
+        package_path="doc_ingestion_pl.yaml",
     )
-    print("Pipeline compiled successfully to 'document_ingestion_pipeline.yaml'")
+    print("Pipeline compiled successfully to 'doc_ingestion_pl.yaml'")

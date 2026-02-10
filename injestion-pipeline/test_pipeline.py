@@ -10,7 +10,7 @@ def make_data():
 
 @dsl.component(base_image="registry.redhat.io/ubi10/python-312-minimal")
 def read_data():
-    with open('/reused_data/file.txt') as f:
+    with open('/data/file.txt') as f:
         print(f.read())
 
 @dsl.pipeline
@@ -36,7 +36,7 @@ def my_pipeline():
     kubernetes.mount_pvc(
         task2,
         pvc_name=pvc1.outputs['name'],
-        mount_path='/reused_data',
+        mount_path='/data',
     )
 
     # wait to delete the PVC until after task2 completes

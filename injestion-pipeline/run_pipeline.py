@@ -5,14 +5,14 @@ Helper script to compile and optionally submit the Kubeflow pipeline
 
 import argparse
 from kfp import compiler
-from kubeflow_pipeline import document_ingestion_pipeline
+from kubeflow_pipeline import doc_ingestion_pl
 
 
 def compile_pipeline(output_path="document_ingestion_pipeline.yaml"):
     """Compile the pipeline to a YAML file"""
     print(f"Compiling pipeline to {output_path}...")
     compiler.Compiler().compile(
-        pipeline_func=document_ingestion_pipeline,
+        pipeline_func=doc_ingestion_pl,
         package_path=output_path
     )
     print(f"✓ Pipeline compiled successfully to '{output_path}'")
@@ -55,7 +55,7 @@ def main():
     )
     parser.add_argument(
         "--output",
-        default="document_ingestion_pipeline.yaml",
+        default="doc_ingestion_pl.yaml",
         help="Output path for compiled pipeline (default: document_ingestion_pipeline.yaml)"
     )
     parser.add_argument(
