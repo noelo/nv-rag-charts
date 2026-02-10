@@ -15,75 +15,6 @@ components:
       parameters:
         Output:
           parameterType: STRUCT
-  comp-createpvc:
-    executorLabel: exec-createpvc
-    inputDefinitions:
-      parameters:
-        access_modes:
-          description: 'AccessModes to request for the provisioned PVC. May
-
-            be one or more of ``''ReadWriteOnce''``, ``''ReadOnlyMany''``, ``''ReadWriteMany''``,
-            or
-
-            ``''ReadWriteOncePod''``. Corresponds to `PersistentVolumeClaim.spec.accessModes
-            <https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes>`_.'
-          parameterType: LIST
-        annotations:
-          description: Annotations for the PVC's metadata. Corresponds to `PersistentVolumeClaim.metadata.annotations
-            <https://kubernetes.io/docs/reference/kubernetes-api/config-and-storage-resources/persistent-volume-claim-v1/#PersistentVolumeClaim>`_.
-          isOptional: true
-          parameterType: STRUCT
-        pvc_name:
-          description: 'Name of the PVC. Corresponds to `PersistentVolumeClaim.metadata.name
-            <https://kubernetes.io/docs/reference/kubernetes-api/config-and-storage-resources/persistent-volume-claim-v1/#PersistentVolumeClaim>`_.
-            Only one of ``pvc_name`` and ``pvc_name_suffix`` can
-
-            be provided.'
-          isOptional: true
-          parameterType: STRING
-        pvc_name_suffix:
-          description: 'Prefix to use for a dynamically generated name, which
-
-            will take the form ``<argo-workflow-name>-<pvc_name_suffix>``. Only one
-
-            of ``pvc_name`` and ``pvc_name_suffix`` can be provided.'
-          isOptional: true
-          parameterType: STRING
-        size:
-          description: The size of storage requested by the PVC that will be provisioned.
-            For example, ``'5Gi'``. Corresponds to `PersistentVolumeClaim.spec.resources.requests.storage
-            <https://kubernetes.io/docs/reference/kubernetes-api/config-and-storage-resources/persistent-volume-claim-v1/#PersistentVolumeClaimSpec>`_.
-          parameterType: STRING
-        storage_class_name:
-          defaultValue: ''
-          description: 'Name of StorageClass from which to provision the PV
-
-            to back the PVC. ``None`` indicates to use the cluster''s default
-
-            storage_class_name. Set to ``''''`` for a statically specified PVC.'
-          isOptional: true
-          parameterType: STRING
-        volume_name:
-          description: 'Pre-existing PersistentVolume that should back the
-
-            provisioned PersistentVolumeClaim. Used for statically
-
-            specified PV only. Corresponds to `PersistentVolumeClaim.spec.volumeName
-            <https://kubernetes.io/docs/reference/kubernetes-api/config-and-storage-resources/persistent-volume-claim-v1/#PersistentVolumeClaimSpec>`_.'
-          isOptional: true
-          parameterType: STRING
-    outputDefinitions:
-      parameters:
-        name:
-          parameterType: STRING
-  comp-deletepvc:
-    executorLabel: exec-deletepvc
-    inputDefinitions:
-      parameters:
-        pvc_name:
-          description: Name of the PVC to delete. Supports passing a runtime-generated
-            name, such as a name provided by ``kubernetes.CreatePvcOp().outputs['name']``.
-          parameterType: STRING
   comp-ingestion-stage:
     executorLabel: exec-ingestion-stage
     inputDefinitions:
@@ -135,8 +66,10 @@ deploymentSpec:
           ) -> Dict[str, str]:\n    \"\"\"Conversion Stage: Convert document to DoclingDocument\
           \ using docling serve API\"\"\"\n    import os\n    import sys\n    import\
           \ asyncio\n    import httpx\n    import json\n    from dotenv import load_dotenv\n\
-          \n\n    async def convert_document():\n        print(\"Starting conversion\
-          \ stage\")\n\n        source_file = TASK_STORAGE+input_document_metadata[FILE_MD5_HASH]\n\
+          \    from pathlib import Path\n\n\n    CONFIG_SECRETS_LOCATION = \"/tmp/ingestion-config/\"\
+          \n    TASK_STORAGE=\"/mnt/storage/\"\n    DOCUMENT_NAME=\"document_name\"\
+          \n    FILE_MD5_HASH=\"file_md5_hash\"\n\n\n    async def convert_document():\n\
+          \        print(\"Starting conversion stage\")\n\n        source_file = TASK_STORAGE+input_document_metadata[FILE_MD5_HASH]\n\
           \n        # Verify the file exists and read it\n        if not os.path.exists(source_file):\n\
           \            raise FileNotFoundError(f\"Document file not found at {source_file}\"\
           )\n\n\n        # Read file content\n        with open(source_file, \"rb\"\
@@ -183,12 +116,6 @@ deploymentSpec:
           \ failed - {type(e).__name__}: {e}\", file=sys.stderr)\n        sys.exit(1)\n\
           \n"
         image: registry.redhat.io/ubi10/python-312-minimal
-    exec-createpvc:
-      container:
-        image: argostub/createpvc
-    exec-deletepvc:
-      container:
-        image: argostub/deletepvc
     exec-ingestion-stage:
       container:
         args:
@@ -221,11 +148,15 @@ deploymentSpec:
           \"\"Ingestion Stage: Read document from S3 and process metadata\"\"\"\n\
           \    import sys\n    import boto3\n    import os\n    import hashlib\n \
           \   from urllib.parse import urlparse\n    from dotenv import load_dotenv\n\
-          \n    dotenv_path = Path(CONFIG_SECRETS_LOCATION+'.env')\n    load_dotenv(dotenv_path=dotenv_path)\n\
-          \    aws_access_key_id = os.environ.get(\"aws_access_key_id\")\n    aws_secret_access_key\
+          \    from pathlib import Path\n\n    CONFIG_SECRETS_LOCATION = \"/tmp/ingestion-config/\"\
+          \n    TASK_STORAGE=\"/mnt/storage/\"\n    S3_BUCKET_NAME=\"s3_bucket_name\"\
+          \n    DOCUMENT_NAME=\"document_name\"\n    FILE_MD5_HASH=\"file_md5_hash\"\
+          \n\n    dotenv_path = Path(CONFIG_SECRETS_LOCATION+'.env')\n    load_dotenv(dotenv_path=dotenv_path)\n\
+          \n    aws_access_key_id = os.environ.get(\"aws_access_key_id\")\n    aws_secret_access_key\
           \ = os.environ.get(\"aws_secret_access_key\")\n    region = os.environ.get(\"\
-          aws_region\", \"us-east-1\")\n\n    try:\n        # Parse S3 location\n\
-          \        print(f\"Parsing S3 location: {ingestion_document_s3_location}\"\
+          aws_region\", \"us-east-1\")\n\n    for name, value in os.environ.items():\n\
+          \        print(\"{0}: {1}\".format(name, value))\n\n    try:\n        #\
+          \ Parse S3 location\n        print(f\"Parsing S3 location: {ingestion_document_s3_location}\"\
           )\n\n        # Parse the S3 URI (e.g., s3://bucket-name/path/to/file.pdf)\n\
           \        parsed_url = urlparse(ingestion_document_s3_location)\n\n     \
           \   if parsed_url.scheme != \"s3\":\n            raise ValueError(\n   \
@@ -299,14 +230,17 @@ deploymentSpec:
           ):\n    \"\"\"Storage Stage: Chunk DoclingDocument and write to Milvus\"\
           \"\"\n    import os\n    import sys\n    import json\n    from docling_core.types.doc.document\
           \ import DoclingDocument\n    from docling_core.transforms.chunker.hybrid_chunker\
-          \ import HybridChunker\n    from dotenv import load_dotenv\n    from pymilvus\
-          \ import (\n        connections,\n        Collection,\n        FieldSchema,\n\
-          \        CollectionSchema,\n        DataType,\n        utility,\n    )\n\
-          \n    print(\"Starting storage stage\")        \n    dotenv_path = Path(CONFIG_SECRETS_LOCATION+'.env')\n\
-          \    load_dotenv(dotenv_path=dotenv_path)\n\n    milvus_host = os.environ.get(\"\
-          MILVUS_HOST\", \"localhost\")\n    milvus_port = os.environ.get(\"MILVUS_PORT\"\
-          , \"19530\")\n\n    try:\n        # Read metadata from previous stage\n\
-          \        source_file = TASK_STORAGE+input_document_metadata[FILE_MD5_HASH]+'.json'\n\
+          \ import HybridChunker\n    from dotenv import load_dotenv\n    from pathlib\
+          \ import Path\n    from pymilvus import (\n        connections,\n      \
+          \  Collection,\n        FieldSchema,\n        CollectionSchema,\n      \
+          \  DataType,\n        utility,\n    )\n\n\n    CONFIG_SECRETS_LOCATION =\
+          \ \"/tmp/ingestion-config/\"\n    TASK_STORAGE=\"/mnt/storage/\"\n    S3_BUCKET_NAME=\"\
+          s3_bucket_name\"\n    DOCUMENT_NAME=\"document_name\"\n    FILE_MD5_HASH=\"\
+          file_md5_hash\"\n\n    print(\"Starting storage stage\")        \n    dotenv_path\
+          \ = Path(CONFIG_SECRETS_LOCATION+'.env')\n    load_dotenv(dotenv_path=dotenv_path)\n\
+          \n    milvus_host = os.environ.get(\"MILVUS_HOST\", \"localhost\")\n   \
+          \ milvus_port = os.environ.get(\"MILVUS_PORT\", \"19530\")\n\n    try:\n\
+          \        # Read metadata from previous stage\n        source_file = TASK_STORAGE+input_document_metadata[FILE_MD5_HASH]+'.json'\n\
           \n        # Verify the file exists and read it\n        if not os.path.exists(source_file):\n\
           \            raise FileNotFoundError(f\"Document file not found at {source_file}\"\
           )\n\n\n        # Read file content\n        with open(source_file, \"rb\"\
@@ -376,12 +310,10 @@ root:
   dag:
     tasks:
       conversion-stage:
-        cachingOptions:
-          enableCache: true
+        cachingOptions: {}
         componentRef:
           name: comp-conversion-stage
         dependentTasks:
-        - createpvc
         - ingestion-stage
         inputs:
           parameters:
@@ -391,48 +323,10 @@ root:
                 producerTask: ingestion-stage
         taskInfo:
           name: conversion-stage
-      createpvc:
-        cachingOptions:
-          enableCache: true
-        componentRef:
-          name: comp-createpvc
-        inputs:
-          parameters:
-            access_modes:
-              runtimeValue:
-                constant:
-                - ReadWriteOnce
-            pvc_name_suffix:
-              runtimeValue:
-                constant: -ingestion-pvc
-            size:
-              runtimeValue:
-                constant: 5Gi
-        taskInfo:
-          name: createpvc
-      deletepvc:
-        cachingOptions:
-          enableCache: true
-        componentRef:
-          name: comp-deletepvc
-        dependentTasks:
-        - createpvc
-        - storage-stage
-        inputs:
-          parameters:
-            pvc_name:
-              taskOutputParameter:
-                outputParameterKey: name
-                producerTask: createpvc
-        taskInfo:
-          name: deletepvc
       ingestion-stage:
-        cachingOptions:
-          enableCache: true
+        cachingOptions: {}
         componentRef:
           name: comp-ingestion-stage
-        dependentTasks:
-        - createpvc
         inputs:
           parameters:
             document_metadata:
@@ -442,19 +336,17 @@ root:
         taskInfo:
           name: ingestion-stage
       storage-stage:
-        cachingOptions:
-          enableCache: true
+        cachingOptions: {}
         componentRef:
           name: comp-storage-stage
         dependentTasks:
-        - createpvc
-        - ingestion-stage
+        - conversion-stage
         inputs:
           parameters:
             input_document_metadata:
               taskOutputParameter:
                 outputParameterKey: Output
-                producerTask: ingestion-stage
+                producerTask: conversion-stage
         taskInfo:
           name: storage-stage
   inputDefinitions:
@@ -474,39 +366,11 @@ platforms:
       executors:
         exec-conversion-stage:
           activeDeadlineSeconds: '600'
-          pvcMount:
-          - mountPath: /mnt/storage
-            pvcNameParameter:
-              taskOutputParameter:
-                outputParameterKey: name
-                producerTask: createpvc
-            taskOutputParameter:
-              outputParameterKey: name
-              producerTask: createpvc
         exec-ingestion-stage:
-          pvcMount:
-          - mountPath: /mnt/storage
-            pvcNameParameter:
-              taskOutputParameter:
-                outputParameterKey: name
-                producerTask: createpvc
-            taskOutputParameter:
-              outputParameterKey: name
-              producerTask: createpvc
           secretAsVolume:
-          - mountPath: /tmp/ingestion-config
+          - mountPath: /tmp/ingestion-config/
             optional: false
-            secretName: ingestion-s3-secret
+            secretName: ingestion-config-secret
             secretNameParameter:
               runtimeValue:
-                constant: ingestion-s3-secret
-        exec-storage-stage:
-          pvcMount:
-          - mountPath: /mnt/storage
-            pvcNameParameter:
-              taskOutputParameter:
-                outputParameterKey: name
-                producerTask: createpvc
-            taskOutputParameter:
-              outputParameterKey: name
-              producerTask: createpvc
+                constant: ingestion-config-secret

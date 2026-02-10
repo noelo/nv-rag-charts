@@ -12,12 +12,6 @@ from dotenv import load_dotenv
 from pathlib import Path
 from kfp.dsl import Output, Artifact, Input
 
-CONFIG_SECRETS_LOCATION = "/tmp/ingestion-config"
-TASK_STORAGE="/mnt/storage/"
-S3_BUCKET_NAME="s3_bucket_name"
-DOCUMENT_NAME="document_name"
-FILE_MD5_HASH="file_md5_hash"
-
 
 @dsl.component(base_image="registry.redhat.io/ubi10/python-312-minimal", packages_to_install=["boto3","dotenv"])
 def ingestion_stage(
@@ -32,9 +26,17 @@ def ingestion_stage(
     import hashlib
     from urllib.parse import urlparse
     from dotenv import load_dotenv
+    from pathlib import Path
+
+    CONFIG_SECRETS_LOCATION = "/tmp/ingestion-config/"
+    TASK_STORAGE="/mnt/storage/"
+    S3_BUCKET_NAME="s3_bucket_name"
+    DOCUMENT_NAME="document_name"
+    FILE_MD5_HASH="file_md5_hash"
 
     dotenv_path = Path(CONFIG_SECRETS_LOCATION+'.env')
     load_dotenv(dotenv_path=dotenv_path)
+
     aws_access_key_id = os.environ.get("aws_access_key_id")
     aws_secret_access_key = os.environ.get("aws_secret_access_key")
     region = os.environ.get("aws_region", "us-east-1")
@@ -145,6 +147,13 @@ def conversion_stage(
     import httpx
     import json
     from dotenv import load_dotenv
+    from pathlib import Path
+
+
+    CONFIG_SECRETS_LOCATION = "/tmp/ingestion-config/"
+    TASK_STORAGE="/mnt/storage/"
+    DOCUMENT_NAME="document_name"
+    FILE_MD5_HASH="file_md5_hash"
 
 
     async def convert_document():
@@ -251,6 +260,7 @@ def storage_stage(
     from docling_core.types.doc.document import DoclingDocument
     from docling_core.transforms.chunker.hybrid_chunker import HybridChunker
     from dotenv import load_dotenv
+    from pathlib import Path
     from pymilvus import (
         connections,
         Collection,
@@ -259,6 +269,13 @@ def storage_stage(
         DataType,
         utility,
     )
+
+
+    CONFIG_SECRETS_LOCATION = "/tmp/ingestion-config/"
+    TASK_STORAGE="/mnt/storage/"
+    S3_BUCKET_NAME="s3_bucket_name"
+    DOCUMENT_NAME="document_name"
+    FILE_MD5_HASH="file_md5_hash"
 
     print("Starting storage stage")        
     dotenv_path = Path(CONFIG_SECRETS_LOCATION+'.env')
@@ -404,19 +421,10 @@ def document_ingestion_pipeline(
 
 ): 
     import os
-    from dotenv import load_dotenv  
-    dotenv_path = Path(CONFIG_SECRETS_LOCATION+'.env')
-    load_dotenv(dotenv_path=dotenv_path)
+    CONFIG_SECRETS_LOCATION = "/tmp/ingestion-config/"
 
     conversion_timeout = os.environ.get("DOCLING_TIMEOUT", 600)
    
-    pvc1 = kubernetes.CreatePVC(
-        # can also use pvc_name instead of pvc_name_suffix to use a pre-existing PVC
-        pvc_name_suffix='-ingestion-pvc',
-        access_modes=['ReadWriteOnce'],
-        size='5Gi',
-    )    
-
     """Define the document ingestion pipeline"""
     # Ingestion Stage: Read from S3 and write to Kubeflow artifact storage
     ingestion_stage_task = ingestion_stage(
@@ -424,11 +432,29 @@ def document_ingestion_pipeline(
         document_metadata=document_metadata,
     )
 
-    kubernetes.mount_pvc(
-        ingestion_stage_task,
-        pvc_name=pvc1.outputs['name'],
-        mount_path='/mnt/storage',
-    )
+    # Conversion Stage: Convert document to DoclingDocument (receives file and metadata from ingestion stage)
+    conversion_stage_task = conversion_stage(
+        input_document_metadata=ingestion_stage_task.output,
+    ).after(ingestion_stage_task)
+
+
+    # Storage Stage: Chunk and store DoclingDocument 
+    storage_stage_task = storage_stage(
+        input_document_metadata=conversion_stage_task.output,
+    ).after(conversion_stage_task)
+
+    # pvc1 = kubernetes.CreatePVC(
+    #     pvc_name_suffix='-ingest',
+    #     access_modes=['ReadWriteOnce'],
+    #     size='5Gi',
+    #     storage_class_name="gp3-csi"
+    # )  
+
+    # kubernetes.mount_pvc(
+    #     ingestion_stage_task,
+    #     pvc_name=pvc1.outputs['name'],
+    #     mount_path='/mnt/storage',
+    # )
 
     kubernetes.use_secret_as_volume(
         ingestion_stage_task,
@@ -437,32 +463,23 @@ def document_ingestion_pipeline(
         optional=False,
     )
 
-    # Conversion Stage: Convert document to DoclingDocument (receives file and metadata from ingestion stage)
-    conversion_stage_task = conversion_stage(
-        input_document_metadata=ingestion_stage_task.output,
-    )
     kubernetes.set_timeout(conversion_stage_task,conversion_timeout)
 
-    kubernetes.mount_pvc(
-        conversion_stage_task,
-        pvc_name=pvc1.outputs['name'],
-        mount_path='/mnt/storage',
-    )
+    # kubernetes.mount_pvc(
+    #     conversion_stage_task,
+    #     pvc_name=pvc1.outputs['name'],
+    #     mount_path='/mnt/storage',
+    # )
 
-    # Storage Stage: Chunk and store DoclingDocument (receives DoclingDocument and metadata from conversion stage)
-    storage_stage_task = storage_stage(
-        input_document_metadata=ingestion_stage_task.output,
-    )
+    # kubernetes.mount_pvc(
+    #     storage_stage_task,
+    #     pvc_name=pvc1.outputs['name'],
+    #     mount_path='/mnt/storage',
+    # )
 
-    kubernetes.mount_pvc(
-        storage_stage_task,
-        pvc_name=pvc1.outputs['name'],
-        mount_path='/mnt/storage',
-    )
-
-    kubernetes.DeletePVC(
-        pvc_name=pvc1.outputs['name']
-    ).after(storage_stage_task)
+    # kubernetes.DeletePVC(
+    #     pvc_name=pvc1.outputs['name']
+    # ).after(storage_stage_task)
     
 
 
