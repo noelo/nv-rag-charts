@@ -8,10 +8,6 @@ from typing import Dict
 from kfp import dsl
 from kfp import compiler
 from kfp import kubernetes
-from dotenv import load_dotenv
-from pathlib import Path
-from kfp.dsl import Output, Artifact, Input
-
 
 @dsl.component(base_image="registry.redhat.io/ubi10/python-312-minimal", packages_to_install=["boto3","dotenv"])
 def ingestion_stage(
@@ -29,7 +25,7 @@ def ingestion_stage(
     from pathlib import Path
 
     CONFIG_SECRETS_LOCATION = "/tmp/ingestion-config/"
-    TASK_STORAGE="/mnt/storage/"
+    TASK_STORAGE="/storage/"
     S3_BUCKET_NAME="s3_bucket_name"
     DOCUMENT_NAME="document_name"
     FILE_MD5_HASH="file_md5_hash"
@@ -151,7 +147,7 @@ def conversion_stage(
 
 
     CONFIG_SECRETS_LOCATION = "/tmp/ingestion-config/"
-    TASK_STORAGE="/mnt/storage/"
+    TASK_STORAGE="/storage/"
     DOCUMENT_NAME="document_name"
     FILE_MD5_HASH="file_md5_hash"
 
@@ -272,7 +268,7 @@ def storage_stage(
 
 
     CONFIG_SECRETS_LOCATION = "/tmp/ingestion-config/"
-    TASK_STORAGE="/mnt/storage/"
+    TASK_STORAGE="/storage/"
     S3_BUCKET_NAME="s3_bucket_name"
     DOCUMENT_NAME="document_name"
     FILE_MD5_HASH="file_md5_hash"
@@ -418,12 +414,17 @@ def storage_stage(
 def document_ingestion_pipeline(
     document_metadata: Dict[str, str],
     ingestion_document_s3_location: str = "s3://default-bucket/documents/",
-
 ): 
     import os
     CONFIG_SECRETS_LOCATION = "/tmp/ingestion-config/"
 
     conversion_timeout = os.environ.get("DOCLING_TIMEOUT", 600)
+    pvc1 = kubernetes.CreatePVC(
+        pvc_name_suffix='-ingest',
+        access_modes=['ReadWriteOnce'],
+        size='5Gi',
+        storage_class_name="gp3-csi"
+    )
    
     """Define the document ingestion pipeline"""
     # Ingestion Stage: Read from S3 and write to Kubeflow artifact storage
@@ -443,18 +444,23 @@ def document_ingestion_pipeline(
         input_document_metadata=conversion_stage_task.output,
     ).after(conversion_stage_task)
 
-    # pvc1 = kubernetes.CreatePVC(
-    #     pvc_name_suffix='-ingest',
-    #     access_modes=['ReadWriteOnce'],
-    #     size='5Gi',
-    #     storage_class_name="gp3-csi"
-    # )  
+    kubernetes.mount_pvc(
+        ingestion_stage_task,
+        pvc_name=pvc1.outputs['name'],
+        mount_path='/storage',
+    )
+ 
+    kubernetes.mount_pvc(
+        conversion_stage_task,
+        pvc_name=pvc1.outputs['name'],
+        mount_path='/storage',
+    )
 
-    # kubernetes.mount_pvc(
-    #     ingestion_stage_task,
-    #     pvc_name=pvc1.outputs['name'],
-    #     mount_path='/mnt/storage',
-    # )
+    kubernetes.mount_pvc(
+        storage_stage_task,
+        pvc_name=pvc1.outputs['name'],
+        mount_path='/storage',
+    )
 
     kubernetes.use_secret_as_volume(
         ingestion_stage_task,
@@ -465,21 +471,11 @@ def document_ingestion_pipeline(
 
     kubernetes.set_timeout(conversion_stage_task,conversion_timeout)
 
-    # kubernetes.mount_pvc(
-    #     conversion_stage_task,
-    #     pvc_name=pvc1.outputs['name'],
-    #     mount_path='/mnt/storage',
-    # )
 
-    # kubernetes.mount_pvc(
-    #     storage_stage_task,
-    #     pvc_name=pvc1.outputs['name'],
-    #     mount_path='/mnt/storage',
-    # )
 
-    # kubernetes.DeletePVC(
-    #     pvc_name=pvc1.outputs['name']
-    # ).after(storage_stage_task)
+    kubernetes.DeletePVC(
+        pvc_name=pvc1.outputs['name']
+    ).after(storage_stage_task)
     
 
 
