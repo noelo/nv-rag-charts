@@ -214,3 +214,11 @@ All errors are logged to stderr and cause the stage to exit with code 1.
 - Verify Milvus is running: `kubectl get pods -l app=milvus -n kubeflow`
 - Check MILVUS_HOST and MILVUS_PORT in the secret
 - Ensure collection name is valid (bucket name with sanitized characters)
+
+
+
+
+```
+oc create cm docling-config --from-file=docling-config.json
+oc create secret generic ingestion-config-secret --from-file=.env
+```

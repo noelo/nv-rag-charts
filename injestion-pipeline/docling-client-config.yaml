@@ -1,0 +1,40 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: docling-client-config
+data:
+  docling-config.json: |-
+    {
+        "from_formats": [
+            "docx",
+            "pptx",
+            "html",
+            "image",
+            "pdf",
+            "asciidoc",
+            "md",
+            "csv",
+            "xlsx",
+            "xml_uspto",
+            "xml_jats",
+            "mets_gbs",
+            "json_docling",
+            "audio",
+            "vtt"
+        ],
+        "to_formats": [
+            "json"
+        ],
+        "image_export_mode": "placeholder",
+        "do_ocr": true,
+        "force_ocr": false,
+        "ocr_engine": "auto",
+        "ocr_lang": [
+            "fr",
+            "de",
+            "es",
+            "en"
+        ],
+        "pdf_backend": "pypdfium2",
+        "table_mode": "fast"
+    }

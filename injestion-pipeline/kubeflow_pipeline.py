@@ -33,6 +33,7 @@ def ingestion_stage(
     dotenv_path = Path(CONFIG_SECRETS_LOCATION+'.env')
     load_dotenv(dotenv_path=dotenv_path)
 
+    s3_url=os.environ.get("s3_url")
     aws_access_key_id = os.environ.get("aws_access_key_id")
     aws_secret_access_key = os.environ.get("aws_secret_access_key")
     region = os.environ.get("aws_region", "us-east-1")
@@ -84,9 +85,11 @@ def ingestion_stage(
         # Create S3 client with credentials from file
         s3_client = boto3.client(
             "s3",
+            endpoint_url=s3_url,
             aws_access_key_id=aws_access_key_id,
             aws_secret_access_key=aws_secret_access_key,
             region_name=region,
+            use_ssl=False
         )
 
         response = s3_client.get_object(Bucket=bucket_name, Key=object_key)
@@ -112,7 +115,6 @@ def ingestion_stage(
         with open(TASK_STORAGE+md5_hash, "wb") as file:
             file.write(file_content)
 
-
         print(
             f"File written successfully to {destination_file} ({len(file_content)} bytes)"
         )
@@ -131,7 +133,7 @@ def ingestion_stage(
 
 
 @dsl.component(
-    base_image="registry.redhat.io/ubi10/python-312-minimal", packages_to_install=["httpx", "docling-core"]
+    base_image="registry.redhat.io/ubi10/python-312-minimal", packages_to_install=["httpx", "docling-core","dotenv"]
 )
 def conversion_stage(
     input_document_metadata: Dict[str, str]
@@ -144,16 +146,23 @@ def conversion_stage(
     import json
     from dotenv import load_dotenv
     from pathlib import Path
-
+    from docling_core.types.doc.document import DoclingDocument
 
     CONFIG_SECRETS_LOCATION = "/tmp/ingestion-config/"
+    DOCLING_CONFIG_LOCATION = "/tmp/docling-config/docling-config.json"
     TASK_STORAGE="/storage/"
     DOCUMENT_NAME="document_name"
     FILE_MD5_HASH="file_md5_hash"
 
-
     async def convert_document():
         print("Starting conversion stage")
+        dotenv_path = Path(CONFIG_SECRETS_LOCATION+'.env')
+        load_dotenv(dotenv_path=dotenv_path)
+
+        with open(DOCLING_CONFIG_LOCATION, "r") as f:
+            conversion_options = json.load(f)
+
+        print(f"Conversion options : {conversion_options}")
 
         source_file = TASK_STORAGE+input_document_metadata[FILE_MD5_HASH]
 
@@ -173,53 +182,40 @@ def conversion_stage(
 
         # Get docling serve API endpoint from environment variable
         docling_api_url = os.environ.get(
-            "DOCLING_API_URL", "http://docling-serve:5000/convert"
+            "DOCLING_API_URL", "http://docling-serve.docling.svc.cluster.local:5001/v1/convert/file"
         )
-        print(f"Calling docling serve API at: {docling_api_url}")
+        docling_timeout = os.environ.get("DOCLING_TIMEOUT",600)
+        print(f"Calling docling serve API at: {docling_api_url}  Timeout {docling_timeout}")
 
-        # Configure conversion options for docling
-        conversion_options = {
-        "from_formats": ["pdf"],
-        "to_formats": ["md", "json", "html", "text", "doctags"],
-        "image_export_mode": "placeholder",
-        "do_ocr": True,
-        "force_ocr": False,
-        "ocr_engine": "easyocr",
-        "ocr_lang": ["en"],
-        "pdf_backend": "dlparse_v2",
-        "table_mode": "fast",
-        "abort_on_error": False,
-        }
-
-        file_type = document_metadata.get("file_type", 'application/pdf')
         document_name = document_metadata.get(DOCUMENT_NAME)
 
-        print(f"Conversion options: {json.dumps(conversion_options, indent=2)}")
-
-        # Call docling serve API to convert to markdown using async httpx client
-        async with httpx.AsyncClient(timeout=300.0) as client:
-            files = {"files": (document_name, ingested_content,file_type)}
+        async with httpx.AsyncClient(timeout=int(docling_timeout)) as client:
+            files = {"files": (document_name, ingested_content,"application/json")}
             
             response = await client.post(docling_api_url, files=files, data=conversion_options)
 
             if response.status_code != 200:
-                raise Exception(
-                    f"Docling API returned status code {response.status_code}: {response.text}"
-                )
+                raise Exception(f"Docling API returned status code {response.status_code}: {response.text}")      
 
-            response_data = response.json()
-            docling_document = response_data.document.json_content
+            doc_status=response.json()["status"]
+            processing_time=response.json()["processing_time"]
+            if doc_status!="success":
+                raise Exception(f"Docling failed to process document {doc_status}")
 
-        print(
-            f"Document has {len(docling_document.pages) if hasattr(docling_document, 'pages') else 0} pages"
-        )
+            response_obj = response.json()["document"]["json_content"]
+            try:
+                doclingdoc_json = DoclingDocument.model_validate_json(json.dumps(response_obj))
+            except Exception as e:
+                raise Exception(f"Invalid DoclingDocument, returned JSON payload failed validation. {e}")
+
+            print(f"Successfully processed document in {processing_time} {doclingdoc_json}")
 
         destination_file = source_file+".json"
 
         # Serialize DoclingDocument to JSON for stage 3
         with open(destination_file, "w", encoding="utf-8") as f:
             # Export document to JSON
-            doc_json = docling_document.model_dump_json(indent=2)
+            doc_json = doclingdoc_json.model_dump_json(indent=2)
             f.write(doc_json)
         print("DoclingDocument written successfully")
 
@@ -228,8 +224,6 @@ def conversion_stage(
         return document_metadata
 
     try:
-        dotenv_path = Path(CONFIG_SECRETS_LOCATION+'.env')
-        load_dotenv(dotenv_path=dotenv_path)
         res = asyncio.run(convert_document())
         return res
     except FileNotFoundError as fnf:
@@ -412,8 +406,8 @@ def storage_stage(
     description="Document ingestion pipeline: S3 ingestion, docling conversion, and Milvus storage",
 )
 def doc_ingestion_pl(
-    document_metadata: Dict[str, str],
-    ingestion_document_s3_location: str = "s3://default-bucket/documents/",
+    document_metadata: Dict[str, str] = {},
+    ingestion_document_s3_location: str = "s3://doc-ingestion/",
 ): 
     import os
     CONFIG_SECRETS_LOCATION = "/tmp/ingestion-config/"
@@ -474,6 +468,13 @@ def doc_ingestion_pl(
         secret_name="ingestion-config-secret",
         mount_path=CONFIG_SECRETS_LOCATION,
         optional=False,
+    )
+
+    kubernetes.use_config_map_as_volume(
+        conversion_stage_task,
+        config_map_name="docling-client-config",
+        mount_path="/tmp/docling-config/",
+        optional=False 
     )
 
     kubernetes.set_timeout(conversion_stage_task,conversion_timeout)
