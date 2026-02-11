@@ -286,9 +286,10 @@ deploymentSpec:
         - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
           \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
           \ python3 -m pip install --quiet --no-warn-script-location 'docling-core'\
-          \ 'pymilvus'  &&  python3 -m pip install --quiet --no-warn-script-location\
-          \ 'kfp==2.15.2' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"\
-          3.9\"' && \"$0\" \"$@\"\n"
+          \ 'pymilvus' 'transformers' 'numpy' 'tree-sitter' 'docling-core[chunking]'\
+          \  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.15.2'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
         - sh
         - -ec
         - 'program_path=$(mktemp -d)
@@ -307,14 +308,18 @@ deploymentSpec:
           \ import HybridChunker\n    from dotenv import load_dotenv\n    from pathlib\
           \ import Path\n    from pymilvus import (\n        connections,\n      \
           \  Collection,\n        FieldSchema,\n        CollectionSchema,\n      \
-          \  DataType,\n        utility,\n    )\n\n\n    CONFIG_SECRETS_LOCATION =\
-          \ \"/tmp/ingestion-config/\"\n    TASK_STORAGE=\"/storage/\"\n    S3_BUCKET_NAME=\"\
-          s3_bucket_name\"\n    DOCUMENT_NAME=\"document_name\"\n    FILE_MD5_HASH=\"\
-          file_md5_hash\"\n\n    print(\"Starting storage stage\")        \n    dotenv_path\
-          \ = Path(CONFIG_SECRETS_LOCATION+'.env')\n    load_dotenv(dotenv_path=dotenv_path)\n\
-          \n    milvus_host = os.environ.get(\"MILVUS_HOST\", \"localhost\")\n   \
-          \ milvus_port = os.environ.get(\"MILVUS_PORT\", \"19530\")\n\n    try:\n\
-          \        # Read metadata from previous stage\n        source_file = TASK_STORAGE+input_document_metadata[FILE_MD5_HASH]+'.json'\n\
+          \  DataType,\n        utility,\n    )\n    # from docling_core.transforms.chunker.hybrid_chunker\
+          \ import HybridChunker\n    # from docling_core.transforms.chunker.tokenizer.base\
+          \ import BaseTokenizer\n    from docling_core.transforms.chunker.tokenizer.huggingface\
+          \ import HuggingFaceTokenizer\n    from transformers import AutoTokenizer\n\
+          \    import numpy as np  \n\n\n    CONFIG_SECRETS_LOCATION = \"/tmp/ingestion-config/\"\
+          \n    TASK_STORAGE=\"/storage/\"\n    S3_BUCKET_NAME=\"s3_bucket_name\"\n\
+          \    DOCUMENT_NAME=\"document_name\"\n    FILE_MD5_HASH=\"file_md5_hash\"\
+          \n\n    print(\"Starting storage stage\")        \n    dotenv_path = Path(CONFIG_SECRETS_LOCATION+'.env')\n\
+          \    load_dotenv(dotenv_path=dotenv_path)\n\n    milvus_host = os.environ.get(\"\
+          MILVUS_HOST\", \"my-release-milvus.milvus.svc.cluster.local\")\n    milvus_port\
+          \ = os.environ.get(\"MILVUS_PORT\", \"19530\")\n\n    try:\n        # Read\
+          \ metadata from previous stage\n        source_file = TASK_STORAGE+input_document_metadata[FILE_MD5_HASH]+'.json'\n\
           \n        # Verify the file exists and read it\n        if not os.path.exists(source_file):\n\
           \            raise FileNotFoundError(f\"Document file not found at {source_file}\"\
           )\n\n\n        # Read file content\n        with open(source_file, \"rb\"\
@@ -344,37 +349,40 @@ deploymentSpec:
           , dtype=DataType.VARCHAR, max_length=512\n                ),\n         \
           \       FieldSchema(name=\"chunk_index\", dtype=DataType.INT64),\n     \
           \           FieldSchema(\n                    name=\"metadata_json\", dtype=DataType.VARCHAR,\
-          \ max_length=2048\n                ),\n            ]\n            schema\
-          \ = CollectionSchema(\n                fields=fields, description=f\"Document\
-          \ chunks from {collection_name}\"\n            )\n            collection\
-          \ = Collection(name=collection_name, schema=schema)\n            print(f\"\
-          Collection {collection_name} created successfully\")\n        else:\n  \
-          \          print(f\"Using existing collection: {collection_name}\")\n  \
-          \          collection = Collection(name=collection_name)\n\n        print(\"\
-          Chunking document with HybridChunker...\")\n        chunker = HybridChunker()\n\
-          \n        # Chunk the document\n        chunk_iter = chunker.chunk(dl_doc=docling_document)\n\
-          \n        for i, chunk in enumerate(chunk_iter):\n            enriched_text\
-          \ = chunker.contextualize(chunk=chunk)\n\n        chunk_texts = []\n   \
-          \     document_names = []\n        chunk_indices = []\n        metadata_jsons\
-          \ = []\n\n        for idx, chunk in enumerate(chunk_iter):\n           \
-          \ enriched_text = chunker.contextualize(chunk=chunk)\n            chunk_texts.append(enriched_text)\n\
-          \            document_names.append(document_name or \"unknown\")\n     \
-          \       chunk_indices.append(idx)\n            metadata_jsons.append(json.dumps(document_metadata))\n\
+          \ max_length=2048\n                ),\n                FieldSchema(\n  \
+          \                  name=\"chunk_vector\", dtype=DataType.FLOAT_VECTOR, dim=4096\n\
+          \                ),\n            ]\n            schema = CollectionSchema(\n\
+          \                fields=fields, description=f\"Document chunks from {collection_name}\"\
+          \n            )\n            collection = Collection(name=collection_name,\
+          \ schema=schema)\n            print(f\"Collection {collection_name} created\
+          \ successfully\")\n        else:\n            print(f\"Using existing collection:\
+          \ {collection_name}\")\n            collection = Collection(name=collection_name)\n\
+          \n        EMBED_MODEL_ID = \"sentence-transformers/all-MiniLM-L6-v2\"\n\n\
+          \        tokenizer = HuggingFaceTokenizer(\n            tokenizer=AutoTokenizer.from_pretrained(EMBED_MODEL_ID),\n\
+          \        )\n        chunker = HybridChunker(tokenizer=tokenizer)\n\n   \
+          \     # Chunk the document\n        chunk_iter = chunker.chunk(dl_doc=docling_document)\n\
+          \n        chunk_texts = []\n        document_names = []\n        chunk_indices\
+          \ = []\n        metadata_jsons = []\n        chunk_vectors=[]\n\n      \
+          \  for idx, chunk in enumerate(chunk_iter):\n            enriched_text =\
+          \ chunker.contextualize(chunk=chunk)\n            chunk_texts.append(enriched_text)\n\
+          \            document_names.append(docling_document.origin.filename)\n \
+          \           chunk_indices.append(idx)\n            metadata_jsons.append(json.dumps(document_metadata))\n\
+          \            chunk_vectors.append(np.random.rand(4096).astype(np.float32))\n\
           \n        chunk_count = len(chunk_texts)\n\n        # Insert chunks into\
           \ Milvus\n        print(\n            f\"\\nInserting {chunk_count} chunks\
           \ into Milvus collection '{collection_name}'...\"\n        )\n\n       \
-          \ entities = [chunk_texts, document_names, chunk_indices, metadata_jsons]\n\
+          \ entities = [chunk_texts, document_names, chunk_indices, metadata_jsons,chunk_vectors]\n\
           \n        insert_result = collection.insert(entities)\n        collection.flush()\n\
-          \n        print(f\"Successfully inserted {chunk_count} chunks into Milvus\"\
-          )\n        print(f\"Insert result: {insert_result}\")\n\n        # Disconnect\
-          \ from Milvus\n        connections.disconnect(\"default\")\n        print(\"\
-          Disconnected from Milvus\")\n\n    except FileNotFoundError as fnf:\n  \
-          \      print(f\"ERROR: {fnf}\", file=sys.stderr)\n        sys.exit(1)\n\
-          \    except Exception as e:\n        print(\n            f\"ERROR: Failed\
-          \ to process document - {type(e).__name__}: {e}\",\n            file=sys.stderr,\n\
-          \        )\n        import traceback\n\n        traceback.print_exc()\n\
-          \        sys.exit(1)\n\n    print(\"\\n\" + \"=\" * 80)\n    print(\"Pipeline\
-          \ complete\")\n\n"
+          \        print(f\"Num entities {collection.num_entities}\")\n\n        print(f\"\
+          Successfully inserted {chunk_count} chunks into Milvus\")\n        print(f\"\
+          Insert result: {insert_result}\")\n\n        # Disconnect from Milvus\n\
+          \        connections.disconnect(\"default\")\n        print(\"Disconnected\
+          \ from Milvus\")\n\n    except FileNotFoundError as fnf:\n        print(f\"\
+          ERROR: {fnf}\", file=sys.stderr)\n        sys.exit(1)\n    except Exception\
+          \ as e:\n        print(\n            f\"ERROR: Failed to process document\
+          \ - {type(e).__name__}: {e}\",\n            file=sys.stderr,\n        )\n\
+          \        import traceback\n\n        traceback.print_exc()\n        sys.exit(1)\n\
+          \n    print(\"\\n\" + \"=\" * 80)\n    print(\"Pipeline complete\")\n\n"
         image: registry.redhat.io/ubi10/python-312-minimal
 pipelineInfo:
   description: 'Document ingestion pipeline: S3 ingestion, docling conversion, and

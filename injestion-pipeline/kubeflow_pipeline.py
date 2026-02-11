@@ -238,7 +238,7 @@ def conversion_stage(
 
 
 @dsl.component(
-    base_image="registry.redhat.io/ubi10/python-312-minimal", packages_to_install=["docling-core", "pymilvus","transformers","numpy"]
+    base_image="registry.redhat.io/ubi10/python-312-minimal", packages_to_install=["docling-core", "pymilvus","transformers","numpy","tree-sitter","docling-core[chunking]"]
 )
 def storage_stage(
     input_document_metadata: Dict[str, str]
@@ -259,8 +259,8 @@ def storage_stage(
         DataType,
         utility,
     )
-    from docling_core.transforms.chunker.hybrid_chunker import HybridChunker
-    from docling_core.transforms.chunker.tokenizer.base import BaseTokenizer
+    # from docling_core.transforms.chunker.hybrid_chunker import HybridChunker
+    # from docling_core.transforms.chunker.tokenizer.base import BaseTokenizer
     from docling_core.transforms.chunker.tokenizer.huggingface import HuggingFaceTokenizer
     from transformers import AutoTokenizer
     import numpy as np  
@@ -276,7 +276,7 @@ def storage_stage(
     dotenv_path = Path(CONFIG_SECRETS_LOCATION+'.env')
     load_dotenv(dotenv_path=dotenv_path)
 
-    milvus_host = os.environ.get("MILVUS_HOST", "localhost")
+    milvus_host = os.environ.get("MILVUS_HOST", "my-release-milvus.milvus.svc.cluster.local")
     milvus_port = os.environ.get("MILVUS_PORT", "19530")
 
     try:
