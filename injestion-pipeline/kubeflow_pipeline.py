@@ -238,7 +238,7 @@ def conversion_stage(
 
 
 @dsl.component(
-    base_image="registry.redhat.io/ubi10/python-312-minimal", packages_to_install=["docling-core", "pymilvus"]
+    base_image="registry.redhat.io/ubi10/python-312-minimal", packages_to_install=["docling-core", "pymilvus","transformers","numpy"]
 )
 def storage_stage(
     input_document_metadata: Dict[str, str]
@@ -259,6 +259,11 @@ def storage_stage(
         DataType,
         utility,
     )
+    from docling_core.transforms.chunker.hybrid_chunker import HybridChunker
+    from docling_core.transforms.chunker.tokenizer.base import BaseTokenizer
+    from docling_core.transforms.chunker.tokenizer.huggingface import HuggingFaceTokenizer
+    from transformers import AutoTokenizer
+    import numpy as np  
 
 
     CONFIG_SECRETS_LOCATION = "/tmp/ingestion-config/"
@@ -334,6 +339,9 @@ def storage_stage(
                 FieldSchema(
                     name="metadata_json", dtype=DataType.VARCHAR, max_length=2048
                 ),
+                FieldSchema(
+                    name="chunk_vector", dtype=DataType.FLOAT_VECTOR, dim=4096
+                ),
             ]
             schema = CollectionSchema(
                 fields=fields, description=f"Document chunks from {collection_name}"
@@ -344,26 +352,29 @@ def storage_stage(
             print(f"Using existing collection: {collection_name}")
             collection = Collection(name=collection_name)
 
-        print("Chunking document with HybridChunker...")
-        chunker = HybridChunker()
+        EMBED_MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
+
+        tokenizer = HuggingFaceTokenizer(
+            tokenizer=AutoTokenizer.from_pretrained(EMBED_MODEL_ID),
+        )
+        chunker = HybridChunker(tokenizer=tokenizer)
 
         # Chunk the document
         chunk_iter = chunker.chunk(dl_doc=docling_document)
-
-        for i, chunk in enumerate(chunk_iter):
-            enriched_text = chunker.contextualize(chunk=chunk)
 
         chunk_texts = []
         document_names = []
         chunk_indices = []
         metadata_jsons = []
+        chunk_vectors=[]
 
         for idx, chunk in enumerate(chunk_iter):
             enriched_text = chunker.contextualize(chunk=chunk)
             chunk_texts.append(enriched_text)
-            document_names.append(document_name or "unknown")
+            document_names.append(docling_document.origin.filename)
             chunk_indices.append(idx)
             metadata_jsons.append(json.dumps(document_metadata))
+            chunk_vectors.append(np.random.rand(4096).astype(np.float32))
 
         chunk_count = len(chunk_texts)
 
@@ -372,10 +383,11 @@ def storage_stage(
             f"\nInserting {chunk_count} chunks into Milvus collection '{collection_name}'..."
         )
 
-        entities = [chunk_texts, document_names, chunk_indices, metadata_jsons]
+        entities = [chunk_texts, document_names, chunk_indices, metadata_jsons,chunk_vectors]
 
         insert_result = collection.insert(entities)
         collection.flush()
+        print(f"Num entities {collection.num_entities}")
 
         print(f"Successfully inserted {chunk_count} chunks into Milvus")
         print(f"Insert result: {insert_result}")

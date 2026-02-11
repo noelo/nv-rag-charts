@@ -222,3 +222,9 @@ All errors are logged to stderr and cause the stage to exit with code 1.
 oc create cm docling-config --from-file=docling-config.json
 oc create secret generic ingestion-config-secret --from-file=.env
 ```
+
+
+# Install MILVUS
+
+[NOTE] https://milvus.io/docs/openshift.md
+
