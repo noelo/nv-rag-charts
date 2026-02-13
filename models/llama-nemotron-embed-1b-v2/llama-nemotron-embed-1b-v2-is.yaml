@@ -1,0 +1,55 @@
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  annotations:
+    opendatahub.io/hardware-profile-name: nvidia-gpu-serving
+    opendatahub.io/hardware-profile-namespace: redhat-ods-applications
+    openshift.io/display-name: llama-nemotron-embed-1b-v2
+    serving.kserve.io/deploymentMode: RawDeployment
+  labels:
+    opendatahub.io/dashboard: "true"
+  name: llama-nemotron-embed-1b-v2
+spec:
+  predictor:
+    automountServiceAccountToken: false
+    maxReplicas: 1
+    minReplicas: 1
+    model:
+      args:
+      - --trust-remote-code
+      - --runner
+      - pooling
+      - --model-impl
+      - vllm
+      - --override-pooler-config
+      - '{"pooling_type":"MEAN"}'
+      - --data-parallel-size
+      - "1"
+      - --dtype
+      - float32
+      - --hf-overrides
+      - '{"architectures":"LlamaModel","is_causal": "false","model_type":"llama"}'
+      env:
+      - name: HF_TOKEN
+        value: hsdjhs
+      modelFormat:
+        name: vLLM
+      name: ""
+      resources:
+        limits:
+          cpu: "4"
+          memory: 8Gi
+          nvidia.com/gpu: "1"
+        requests:
+          cpu: "4"
+          memory: 8Gi
+          nvidia.com/gpu: "1"
+      runtime: llama-nemotron-embed-1b-v2
+      storageUri: hf://nvidia/llama-nemotron-embed-1b-v2
+    tolerations:
+    - effect: NoSchedule
+      key: nvidia-gpu-only
+      operator: Exists
+    - effect: NoSchedule
+      key: nvidia.com/gpu
+      operator: Exists
