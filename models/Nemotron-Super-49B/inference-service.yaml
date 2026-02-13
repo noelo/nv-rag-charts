@@ -1,0 +1,48 @@
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  annotations:
+    opendatahub.io/hardware-profile-name: nvidia-gpu-serving
+  labels:
+    opendatahub.io/dashboard: "true"
+  name: nemotron
+spec:
+  predictor:
+    annotations:
+      serving.knative.dev/progress-deadline: 30m
+    automountServiceAccountToken: false
+    maxReplicas: 1
+    minReplicas: 1
+    model:
+      args:
+      - --tensor-parallel-size=4
+      - --trust-remote-code
+      - --max-model-len=100000
+      - --enable-auto-tool-choice
+      - --tool-call-parser
+      - llama3_json
+      - --async-scheduling
+      env:
+      - name: HF_TOKEN
+        value: ***********
+      modelFormat:
+        name: vLLM
+      name: ""
+      resources:
+        limits:
+          cpu: "8"
+          memory: 16Gi
+          nvidia.com/gpu: "4"
+        requests:
+          cpu: "4"
+          memory: 4Gi
+          nvidia.com/gpu: "4"
+      runtime: nemotron
+      storageUri: hf://nvidia/Llama-3_3-Nemotron-Super-49B-v1_5
+    tolerations:
+    - effect: NoSchedule
+      key: nvidia-gpu-only
+      operator: Exists
+    - effect: NoSchedule
+      key: nvidia.com/gpu
+      operator: Exists
